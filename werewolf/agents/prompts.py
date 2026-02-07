@@ -169,6 +169,13 @@ No action is required. Set "action": null""",
     "vote": """CURRENT PHASE: Day - Voting
 Vote for a player to eliminate. The player with the most votes will be eliminated.
 REQUIRED ACTION: {{"action": {{"vote_target": <player_id>}}}}
+You cannot vote for yourself.""",
+
+    "runoff_vote": """CURRENT PHASE: Day - Runoff Vote
+The previous vote resulted in a TIE. A runoff vote is now held between the tied candidates.
+You may ONLY vote for one of these candidates: {runoff_candidates}
+If this runoff also ties, NO ONE will be eliminated today.
+REQUIRED ACTION: {{"action": {{"vote_target": <player_id>}}}}
 You cannot vote for yourself."""
 }
 
@@ -193,4 +200,7 @@ def get_action_instruction(required_action: str, turn_context: dict = None) -> s
             already_spoken=already,
             yet_to_speak=yet
         )
+    elif turn_context and required_action == "runoff_vote":
+        candidates_str = ", ".join(f"P{c}" for c in turn_context["runoff_candidates"])
+        template = template.format(runoff_candidates=candidates_str)
     return template

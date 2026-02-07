@@ -215,7 +215,9 @@ function filterDisplayableEvents(events) {
         e.type === 'death_announcement' ||
         e.type === 'elimination' ||
         e.type === 'divine_result' ||
-        e.type === 'kill'
+        e.type === 'kill' ||
+        e.type === 'runoff_announcement' ||
+        e.type === 'no_elimination'
     );
 }
 
@@ -321,6 +323,25 @@ function showCurrentEvent() {
                 Wolves have chosen their target: 
                 <span class="victim">Player ${event.payload.victim_id}</span>
             </div>
+        `;
+    } else if (event.type === 'runoff_announcement') {
+        const candidates = event.payload.candidates.map(c => `Player ${c}`).join(' vs ');
+        display.classList.add('action');
+        content.innerHTML = `
+            <div class="action-icon">⚖️</div>
+            <div class="display-text">
+                Vote tied! Runoff: ${candidates}
+            </div>
+            <div class="display-hint">Only these candidates can be voted for</div>
+        `;
+    } else if (event.type === 'no_elimination') {
+        display.classList.add('action');
+        content.innerHTML = `
+            <div class="action-icon">🤝</div>
+            <div class="display-text">
+                Runoff tied — no one is eliminated today!
+            </div>
+            <div class="display-hint">The village could not reach a consensus</div>
         `;
     }
 
@@ -455,6 +476,10 @@ function formatEventForLog(event) {
             return `🏆 <strong>${event.payload.winner.toUpperCase()} WINS!</strong>`;
         case 'kill':
             return `🐺 Wolves target P${event.payload.victim_id}`;
+        case 'runoff_announcement':
+            return `⚖️ Vote tied! Runoff: ${event.payload.candidates.map(c => `P${c}`).join(' vs ')}`;
+        case 'no_elimination':
+            return `🤝 Runoff tied — no elimination today`;
         default:
             return JSON.stringify(event.payload);
     }

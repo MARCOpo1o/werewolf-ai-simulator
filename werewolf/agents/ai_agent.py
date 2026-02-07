@@ -176,6 +176,11 @@ class AIAgent:
         elif etype == "divine_result":
             result = "WEREWOLF" if payload.get("is_werewolf") else "NOT WEREWOLF"
             return f"[DIVINE] P{payload.get('target_id')} is {result}"
+        elif etype == "runoff_announcement":
+            candidates_str = ", ".join(f"P{c}" for c in payload.get("candidates", []))
+            return f"[RUNOFF] Vote tied! Runoff between: {candidates_str}"
+        elif etype == "no_elimination":
+            return f"[NO ELIMINATION] Runoff tied — no one is eliminated today"
         elif etype == "game_status":
             return f"[STATUS] Wolves: {payload.get('alive_wolves')}, Village: {payload.get('alive_villagers')}"
         else:

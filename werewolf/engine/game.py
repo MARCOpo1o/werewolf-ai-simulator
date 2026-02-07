@@ -11,6 +11,8 @@ from werewolf.engine.events import (
     create_divine_result_event,
     create_vote_event,
     create_elimination_event,
+    create_runoff_announcement_event,
+    create_no_elimination_event,
     create_phase_event,
     create_win_event,
     create_game_status_event,
@@ -267,7 +269,7 @@ class GameEngine:
         vote_counts = Counter(kill_votes.values())
         max_votes = max(vote_counts.values())
         candidates = [t for t, c in vote_counts.items() if c == max_votes]
-        victim_id = min(candidates)
+        victim_id = self.rng.choice(candidates)
 
         event = create_kill_event(self.state, victim_id, kill_votes)
         self.logger.log_event(event)
@@ -356,16 +358,73 @@ class GameEngine:
         vote_counts = Counter(votes.values())
         max_votes = max(vote_counts.values())
         candidates = [t for t, c in vote_counts.items() if c == max_votes]
-        eliminated_id = min(candidates)
+
+        if len(candidates) > 1:
+            event = create_runoff_announcement_event(
+                self.state, candidates, dict(vote_counts)
+            )
+            self.logger.log_event(event)
+            self.transcript.print_event(event, self.players)
+
+            eliminated_id, final_vote_counts = self._runoff_vote(candidates)
+            if eliminated_id is None:
+                return None
+        else:
+            eliminated_id = candidates[0]
+            final_vote_counts = dict(vote_counts)
 
         eliminated_role = self.players[eliminated_id].role
         event = create_elimination_event(
-            self.state, eliminated_id, eliminated_role, dict(vote_counts)
+            self.state, eliminated_id, eliminated_role, final_vote_counts
         )
         self.logger.log_event(event)
         self.transcript.print_event(event, self.players)
 
         return eliminated_id
+
+    def _runoff_vote(self, candidates: list[int]) -> tuple[Optional[int], dict]:
+        alive_players = self.state.get_alive_players()
+        votes = {}
+
+        for player in alive_players:
+            turn_context = {"runoff_candidates": candidates}
+            observation = build_observation(
+                self.state, player.id, "runoff_vote", turn_context
+            )
+            response = self._get_agent_action(player.id, observation)
+
+            if response.get("thought"):
+                event = create_thought_event(self.state, player.id, response["thought"])
+                self.logger.log_event(event)
+                self.transcript.print_event(event, self.players)
+
+            action = response.get("action", {})
+            target = action.get("vote_target")
+            if target is not None:
+                votes[player.id] = target
+                event = create_vote_event(self.state, player.id, target)
+                self.logger.log_event(event)
+                self.transcript.print_event(event, self.players)
+
+            update_player_seen_index(self.state, player.id)
+
+        if not votes:
+            event = create_no_elimination_event(self.state, candidates)
+            self.logger.log_event(event)
+            self.transcript.print_event(event, self.players)
+            return None, {}
+
+        vote_counts = Counter(votes.values())
+        max_votes = max(vote_counts.values())
+        runoff_winners = [t for t, c in vote_counts.items() if c == max_votes]
+
+        if len(runoff_winners) == 1:
+            return runoff_winners[0], dict(vote_counts)
+
+        event = create_no_elimination_event(self.state, runoff_winners)
+        self.logger.log_event(event)
+        self.transcript.print_event(event, self.players)
+        return None, {}
 
     def _kill_player(self, player_id: int, cause: str):
         player = self.players[player_id]

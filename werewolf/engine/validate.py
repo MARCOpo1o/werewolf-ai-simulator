@@ -63,6 +63,18 @@ def validate_action(
             return False, "Cannot vote for yourself"
         return True, None
 
+    if required_action == "runoff_vote":
+        if not action or "vote_target" not in action:
+            return False, "Missing vote_target in action"
+        target = _to_int(action["vote_target"])
+        tc = observation.get("turn_context") or {}
+        runoff_candidates = set(tc.get("runoff_candidates", []))
+        if target not in runoff_candidates:
+            return False, f"Vote target {target} is not a runoff candidate. Valid: {sorted(runoff_candidates)}"
+        if target == player_id:
+            return False, "Cannot vote for yourself"
+        return True, None
+
     return False, f"Unknown required_action: {required_action}"
 
 
@@ -130,6 +142,20 @@ def get_fallback_action(observation: dict, rng) -> dict:
             target = alive_ids[0] if alive_ids else 0
         return {
             "thought": "[fallback] Random vote target",
+            "say": None,
+            "action": {"vote_target": target}
+        }
+
+    if required_action == "runoff_vote":
+        tc = observation.get("turn_context") or {}
+        runoff_candidates = tc.get("runoff_candidates", [])
+        valid_targets = [pid for pid in runoff_candidates if pid != player_id]
+        if valid_targets:
+            target = rng.choice(valid_targets)
+        else:
+            target = runoff_candidates[0] if runoff_candidates else 0
+        return {
+            "thought": "[fallback] Random runoff vote target",
             "say": None,
             "action": {"vote_target": target}
         }

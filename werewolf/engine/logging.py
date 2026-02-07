@@ -100,6 +100,14 @@ class ConsoleTranscript:
             votes_str = ", ".join(f"P{k}:{v}" for k, v in sorted(vote_counts.items()))
             print(f"\n  Final votes: {votes_str}")
 
+        elif event_type == "runoff_announcement":
+            candidates = payload.get("candidates", [])
+            candidates_str = " vs ".join(f"P{c}" for c in candidates)
+            print(f"\n  [RUNOFF] Vote tied! Runoff between: {candidates_str}")
+
+        elif event_type == "no_elimination":
+            print(f"\n  [NO ELIMINATION] Runoff tied — no one is eliminated today!")
+
         elif event_type == "game_status":
             wolves = payload.get("alive_wolves")
             villagers = payload.get("alive_villagers")

@@ -152,6 +152,34 @@ def create_win_event(game_state, winner: str, remaining_ids: list[int]) -> dict:
     )
 
 
+def create_runoff_announcement_event(
+    game_state,
+    candidate_ids: list[int],
+    vote_counts: dict[int, int]
+) -> dict:
+    return create_event(
+        game_state,
+        event_type="runoff_announcement",
+        channel="public",
+        payload={"candidates": candidate_ids, "vote_counts": vote_counts}
+    )
+
+
+def create_no_elimination_event(
+    game_state,
+    candidate_ids: list[int]
+) -> dict:
+    return create_event(
+        game_state,
+        event_type="no_elimination",
+        channel="public",
+        payload={
+            "candidates": candidate_ids,
+            "reason": "Runoff vote ended in a tie"
+        }
+    )
+
+
 def create_game_status_event(
     game_state,
     alive_wolves: int,
