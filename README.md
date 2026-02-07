@@ -1,14 +1,8 @@
 # Werewolf Multi-Agent Simulator
 
-A minimal, locally runnable Python simulation of the Werewolf (Mafia) party game where all players are AI agents powered by the Grok API.
+A multi-agent Werewolf (Mafia) game where all players are AI agents. The goal is to **observe how AI agents manipulate each other** and **how well they can lie** to other agents—who to trust, when to bluff, and how persuasion and deception play out when every player is an LLM.
 
-## Features
-
-- All players are AI agents with role-specific objectives
-- Each agent has persistent memory across turns
-- Strict moderator orchestration ensures fair play
-- Web UI to run and step through a single game
-- JSONL logging for analysis and replay
+Powered by the Grok API; run locally with a simple web UI or (later) at scale for experiments.
 
 ## Requirements
 
@@ -45,7 +39,7 @@ Then open [http://localhost:5000](http://localhost:5000) in your browser. Use th
 
 | Game setup | In-game (phase / transcript) |
 |------------|------------------------------|
-| ![Setup](screenshots/Screenshot%202026-02-06%20at%207.48.48%20PM.png) | ![Game](screenshots/Screenshot%202026-02-06%20at%207.59.01%20PM.png) |
+| ![Setup](screenshots/setup.png) | ![Game](screenshots/gameplay.png) |
 
 ## Game rules (summary)
 
@@ -60,7 +54,7 @@ Then open [http://localhost:5000](http://localhost:5000) in your browser. Use th
 
 ## Next steps
 
-Planned follow-up: support **running many games at scale** (e.g. batch or headless runs) and **analyzing results** (aggregate win rates, role performance, etc.). The web UI is for single-game inspection and debugging before scaling.
+Planned follow-up: **run many games at scale** (batch or headless) and **analyze results**—e.g. how often wolves win, how persuasion and lying correlate with outcomes, and how different setups affect manipulation. The web UI is for single-game inspection and debugging before scaling.
 
 ## Project structure
 
