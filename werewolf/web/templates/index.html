@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Werewolf AI</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>WEREWOLF</h1>
+        <div id="status-bar">
+            <span id="round-info">Round: -</span>
+            <span id="phase-info">Phase: Setup</span>
+            <span id="team-counts">Wolves: - | Villagers: -</span>
+        </div>
+    </header>
+
+    <main>
+        <section id="game-area">
+            <div id="player-circle"></div>
+            <div id="center-info">
+                <div id="winner-display" class="hidden"></div>
+                <div id="center-display" class="hidden">
+                    <div class="display-content"></div>
+                </div>
+            </div>
+        </section>
+
+        <aside id="event-log">
+            <h3>Event Log</h3>
+            <div id="event-list"></div>
+        </aside>
+    </main>
+
+    <footer>
+        <div id="controls">
+            <button id="new-game-btn" onclick="showNewGameModal()">New Game</button>
+            <button id="autoplay-btn" onclick="toggleAutoPlay()" disabled>Auto Play</button>
+            <button id="advance-btn" onclick="advancePhase()" disabled>Next Phase</button>
+        </div>
+    </footer>
+
+    <div id="new-game-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>New Game</h2>
+            <form id="new-game-form">
+                <label>
+                    Players:
+                    <input type="number" id="input-players" value="7" min="4" max="15">
+                </label>
+                <label>
+                    Wolves:
+                    <input type="number" id="input-wolves" value="2" min="1" max="5">
+                </label>
+                <label>
+                    Seed:
+                    <input type="number" id="input-seed" value="42">
+                </label>
+                <div class="modal-buttons">
+                    <button type="button" onclick="hideNewGameModal()">Cancel</button>
+                    <button type="submit">Start</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="memory-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Player <span id="memory-player-id"></span> Details</h2>
+            <div id="memory-content"></div>
+            <button onclick="hideMemoryModal()">Close</button>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
