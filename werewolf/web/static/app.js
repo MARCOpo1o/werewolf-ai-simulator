@@ -20,11 +20,11 @@ async function fetchState() {
     return data;
 }
 
-async function newGame(nPlayers, nWolves, seed) {
+async function newGame(nPlayers, nWolves, nSeers, seed) {
     const response = await fetch('/api/new', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ n_players: nPlayers, n_wolves: nWolves, seed })
+        body: JSON.stringify({ n_players: nPlayers, n_wolves: nWolves, n_seers: nSeers, seed })
     });
     const data = await response.json();
     if (data.error) {
@@ -546,9 +546,10 @@ document.getElementById('new-game-form').addEventListener('submit', async (e) =>
     e.preventDefault();
     const nPlayers = parseInt(document.getElementById('input-players').value);
     const nWolves = parseInt(document.getElementById('input-wolves').value);
+    const nSeers = parseInt(document.getElementById('input-seers').value);
     const seed = parseInt(document.getElementById('input-seed').value);
     hideNewGameModal();
-    await newGame(nPlayers, nWolves, seed);
+    await newGame(nPlayers, nWolves, nSeers, seed);
 });
 
 document.addEventListener('keydown', (e) => {

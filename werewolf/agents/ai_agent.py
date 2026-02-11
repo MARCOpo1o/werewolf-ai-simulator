@@ -37,7 +37,7 @@ class AIAgent:
         self.show_prompts = show_prompts
         self.system_prompt = get_system_prompt(role, player_id, wolf_roster)
         
-        if HAS_XAI:
+        if HAS_XAI and api_key:
             self.client = Client(
                 api_key=api_key,
                 timeout=120
@@ -186,6 +186,17 @@ class AIAgent:
         else:
             return f"[{etype.upper()}] {json.dumps(payload)}"
 
+    @staticmethod
+    def _extract_json(text: str) -> str:
+        brace = text.find("{")
+        if brace == -1:
+            return text
+        try:
+            obj, end = json.JSONDecoder().raw_decode(text, brace)
+            return json.dumps(obj)
+        except json.JSONDecodeError:
+            return text
+
     def _call_grok(self, user_prompt: str) -> Optional[dict]:
         logger.debug(f"P{self.player_id} calling Grok API with model={self.model}")
 
@@ -203,14 +214,7 @@ class AIAgent:
                 logger.info(f"P{self.player_id} reasoning tokens: {response.usage.reasoning_tokens}")
 
             content = content.strip()
-            if content.startswith("```json"):
-                content = content[7:]
-            if content.startswith("```"):
-                content = content[3:]
-            if content.endswith("```"):
-                content = content[:-3]
-            content = content.strip()
-
+            content = self._extract_json(content)
             logger.debug(f"P{self.player_id} parsing JSON: {content[:200]}...")
             return json.loads(content)
 

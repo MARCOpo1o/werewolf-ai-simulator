@@ -18,7 +18,7 @@ from werewolf.engine.events import (
     create_game_status_event,
 )
 from werewolf.engine.visibility import build_observation, update_player_seen_index
-from werewolf.engine.validate import validate_action, get_fallback_action
+from werewolf.engine.validate import validate_action, get_fallback_action, _to_int
 from werewolf.engine.logging import JSONLLogger, ConsoleTranscript
 from werewolf.roles.assign import assign_roles
 from werewolf.agents.ai_agent import AIAgent, create_agents
@@ -38,22 +38,25 @@ class GameEngine:
         self,
         n_players: int = 7,
         n_wolves: int = 2,
+        n_seers: int = 1,
         seed: int = 42,
         output_dir: str = "outputs/games",
         api_key: str = "",
         model: str = "grok-4-1-fast",
         show_all_channels: bool = True,
-        show_prompts: bool = False
+        show_prompts: bool = False,
+        transcript_enabled: bool = True
     ):
         self.n_players = n_players
         self.n_wolves = n_wolves
+        self.n_seers = n_seers
         self.seed = seed
         self.output_dir = output_dir
         self.api_key = api_key
         self.model = model
 
         self.rng = random.Random(seed)
-        self.players = assign_roles(n_players, n_wolves, self.rng)
+        self.players = assign_roles(n_players, n_wolves, self.rng, n_seers=n_seers)
 
         self.state = GameState(
             seed=seed,
@@ -63,6 +66,7 @@ class GameEngine:
             settings={
                 "n_players": n_players,
                 "n_wolves": n_wolves,
+                "n_seers": n_seers,
             },
             rng=self.rng
         )
@@ -71,7 +75,10 @@ class GameEngine:
             self.players, api_key, model, show_prompts
         )
         self.logger = JSONLLogger(output_dir, self.state.game_id)
-        self.transcript = ConsoleTranscript(show_all=show_all_channels)
+        self.transcript = ConsoleTranscript(
+            show_all=show_all_channels,
+            enabled=transcript_enabled
+        )
 
         self._phase_index = 0
         self._pending_victim_id: Optional[int] = None
@@ -80,8 +87,13 @@ class GameEngine:
             "seed": seed,
             "n_players": n_players,
             "n_wolves": n_wolves,
+            "n_seers": n_seers,
             "model": model,
-            "game_id": self.state.game_id
+            "game_id": self.state.game_id,
+            "role_map": {
+                str(pid): {"role": p.role, "team": p.team}
+                for pid, p in sorted(self.players.items())
+            },
         })
 
     def run(self) -> str:
@@ -110,60 +122,65 @@ class GameEngine:
         """Run a single phase and return phase events. Used by web UI."""
         if self.state.winner is not None:
             return {"done": True, "winner": self.state.winner}
+        while True:
+            event_start_idx = len(self.state.events)
+            phase_name = self.PHASE_ORDER[self._phase_index]
+            should_return_phase = True
 
-        event_start_idx = len(self.state.events)
-        phase_name = self.PHASE_ORDER[self._phase_index]
+            if phase_name == "night_wolf_chat":
+                self.state.round += 1
+                self._set_phase("night_wolf_chat")
+                self.transcript.print_phase_header(self.state.round, self.state.phase)
+                self._wolf_chat()
 
-        if phase_name == "night_wolf_chat":
-            self.state.round += 1
-            self._set_phase("night_wolf_chat")
-            self.transcript.print_phase_header(self.state.round, self.state.phase)
-            self._wolf_chat()
+            elif phase_name == "night_wolf_kill":
+                self._set_phase("night_wolf_kill")
+                self._pending_victim_id = self._wolf_kill_vote()
 
-        elif phase_name == "night_wolf_kill":
-            self._set_phase("night_wolf_kill")
-            self._pending_victim_id = self._wolf_kill_vote()
+            elif phase_name == "night_seer":
+                seer = self.state.get_seer()
+                if seer and seer.alive:
+                    self._set_phase("night_seer")
+                    self._seer_divine(seer.id)
+                else:
+                    should_return_phase = False
+                if self._pending_victim_id is not None:
+                    self._kill_player(self._pending_victim_id, "wolf_kill")
+                    self._pending_victim_id = None
 
-        elif phase_name == "night_seer":
-            seer = self.state.get_seer()
-            if seer and seer.alive:
-                self._set_phase("night_seer")
-                self._seer_divine(seer.id)
-            if self._pending_victim_id is not None:
-                self._kill_player(self._pending_victim_id, "wolf_kill")
-                self._pending_victim_id = None
+            elif phase_name == "day_announce":
+                self._set_phase("day_announce")
+                self.transcript.print_phase_header(self.state.round, self.state.phase)
+                self._log_game_status()
+                winner = self.state.check_win_condition()
+                if winner:
+                    self._end_game(winner)
 
-        elif phase_name == "day_announce":
-            self._set_phase("day_announce")
-            self.transcript.print_phase_header(self.state.round, self.state.phase)
-            self._log_game_status()
-            winner = self.state.check_win_condition()
-            if winner:
-                self._end_game(winner)
+            elif phase_name == "day_discuss":
+                self._set_phase("day_discuss")
+                self._day_discussion()
 
-        elif phase_name == "day_discuss":
-            self._set_phase("day_discuss")
-            self._day_discussion()
+            elif phase_name == "day_vote":
+                self._set_phase("day_vote")
+                eliminated_id = self._day_vote()
+                if eliminated_id is not None:
+                    self._kill_player(eliminated_id, "vote_elimination")
+                self._log_game_status()
+                winner = self.state.check_win_condition()
+                if winner:
+                    self._end_game(winner)
 
-        elif phase_name == "day_vote":
-            self._set_phase("day_vote")
-            eliminated_id = self._day_vote()
-            if eliminated_id is not None:
-                self._kill_player(eliminated_id, "vote_elimination")
-            self._log_game_status()
-            winner = self.state.check_win_condition()
-            if winner:
-                self._end_game(winner)
+            self._phase_index = (self._phase_index + 1) % len(self.PHASE_ORDER)
+            if not should_return_phase:
+                continue
 
-        self._phase_index = (self._phase_index + 1) % len(self.PHASE_ORDER)
-        phase_events = self.state.events[event_start_idx:]
-
-        return {
-            "done": self.state.winner is not None,
-            "winner": self.state.winner,
-            "phase": phase_name,
-            "phase_events": phase_events
-        }
+            phase_events = self.state.events[event_start_idx:]
+            return {
+                "done": self.state.winner is not None,
+                "winner": self.state.winner,
+                "phase": phase_name,
+                "phase_events": phase_events
+            }
 
     def get_state_dict(self) -> dict:
         """Return serializable game state for API."""
@@ -172,6 +189,7 @@ class GameEngine:
             "round": self.state.round,
             "phase": self.state.phase,
             "winner": self.state.winner,
+            "settings": self.state.settings,
             "players": [
                 {
                     "id": p.id,
@@ -257,7 +275,7 @@ class GameEngine:
                 self.transcript.print_event(event, self.players)
 
             action = response.get("action", {})
-            target = action.get("kill_target")
+            target = self._coerce_player_id(action.get("kill_target"))
             if target is not None:
                 kill_votes[wolf.id] = target
 
@@ -286,7 +304,7 @@ class GameEngine:
             self.transcript.print_event(event, self.players)
 
         action = response.get("action", {})
-        target_id = action.get("divine_target")
+        target_id = self._coerce_player_id(action.get("divine_target"))
 
         if target_id is not None and target_id in self.players:
             target = self.players[target_id]
@@ -343,7 +361,7 @@ class GameEngine:
                 self.transcript.print_event(event, self.players)
 
             action = response.get("action", {})
-            target = action.get("vote_target")
+            target = self._coerce_player_id(action.get("vote_target"))
             if target is not None:
                 votes[player.id] = target
                 event = create_vote_event(self.state, player.id, target)
@@ -399,7 +417,7 @@ class GameEngine:
                 self.transcript.print_event(event, self.players)
 
             action = response.get("action", {})
-            target = action.get("vote_target")
+            target = self._coerce_player_id(action.get("vote_target"))
             if target is not None:
                 votes[player.id] = target
                 event = create_vote_event(self.state, player.id, target)
@@ -427,6 +445,9 @@ class GameEngine:
         return None, {}
 
     def _kill_player(self, player_id: int, cause: str):
+        player_id = self._coerce_player_id(player_id)
+        if player_id is None or player_id not in self.players:
+            raise ValueError(f"Cannot kill unknown player id: {player_id}")
         player = self.players[player_id]
         player.alive = False
 
@@ -446,6 +467,14 @@ class GameEngine:
             return get_fallback_action(obs, self.rng)
 
         return agent.act(observation, validator, fallback, self.rng)
+
+    def _coerce_player_id(self, value) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            return _to_int(value)
+        except (TypeError, ValueError):
+            return None
 
     def _log_game_status(self):
         alive_wolves = len(self.state.get_alive_wolves())

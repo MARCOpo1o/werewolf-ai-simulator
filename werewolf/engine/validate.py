@@ -1,11 +1,45 @@
+import math
+import re
 from typing import Tuple, Optional
+
+_PLAYER_PREFIX = re.compile(
+    r"^(?:p|player)\s*(\d+)$",
+    re.IGNORECASE,
+)
 
 
 def _to_int(value) -> int:
-    """Convert string or int to int. AI sometimes returns strings."""
-    if isinstance(value, str):
+    if isinstance(value, bool):
+        raise ValueError("Boolean is not a valid player id")
+
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{value} is not a valid player id")
+        if value != int(value):
+            raise ValueError(f"Float {value} is not a whole number")
         return int(value)
-    return value
+
+    if isinstance(value, int):
+        return value
+
+    if not isinstance(value, str):
+        raise ValueError(f"Unsupported player id type: {type(value).__name__}")
+
+    value = value.strip()
+    if not value:
+        raise ValueError("Empty string is not a valid player id")
+
+    m = _PLAYER_PREFIX.match(value)
+    if m:
+        return int(m.group(1))
+
+    try:
+        f = float(value)
+    except ValueError:
+        raise ValueError(f"Cannot parse player id: {value!r}")
+    if f != int(f):
+        raise ValueError(f"Float string {value!r} is not a whole number")
+    return int(f)
 
 
 def validate_action(
@@ -35,7 +69,11 @@ def validate_action(
     if required_action == "choose_wolf_kill":
         if not action or "kill_target" not in action:
             return False, "Missing kill_target in action"
-        target = _to_int(action["kill_target"])
+        try:
+            target = _to_int(action["kill_target"])
+        except (TypeError, ValueError) as exc:
+            return False, f"Invalid kill_target: {exc}"
+        action["kill_target"] = target
         if target not in alive_ids:
             return False, f"Kill target {target} is not alive"
         wolf_ids = set(observation["private_info"].get("wolf_roster", []))
@@ -46,7 +84,11 @@ def validate_action(
     if required_action == "seer_divine":
         if not action or "divine_target" not in action:
             return False, "Missing divine_target in action"
-        target = _to_int(action["divine_target"])
+        try:
+            target = _to_int(action["divine_target"])
+        except (TypeError, ValueError) as exc:
+            return False, f"Invalid divine_target: {exc}"
+        action["divine_target"] = target
         if target not in alive_ids:
             return False, f"Divine target {target} is not alive"
         if target == player_id:
@@ -56,7 +98,11 @@ def validate_action(
     if required_action == "vote":
         if not action or "vote_target" not in action:
             return False, "Missing vote_target in action"
-        target = _to_int(action["vote_target"])
+        try:
+            target = _to_int(action["vote_target"])
+        except (TypeError, ValueError) as exc:
+            return False, f"Invalid vote_target: {exc}"
+        action["vote_target"] = target
         if target not in alive_ids:
             return False, f"Vote target {target} is not alive"
         if target == player_id:
@@ -66,9 +112,16 @@ def validate_action(
     if required_action == "runoff_vote":
         if not action or "vote_target" not in action:
             return False, "Missing vote_target in action"
-        target = _to_int(action["vote_target"])
+        try:
+            target = _to_int(action["vote_target"])
+        except (TypeError, ValueError) as exc:
+            return False, f"Invalid vote_target: {exc}"
+        action["vote_target"] = target
         tc = observation.get("turn_context") or {}
-        runoff_candidates = set(tc.get("runoff_candidates", []))
+        try:
+            runoff_candidates = {_to_int(c) for c in tc.get("runoff_candidates", [])}
+        except (TypeError, ValueError) as exc:
+            return False, f"Invalid runoff candidate list: {exc}"
         if target not in runoff_candidates:
             return False, f"Vote target {target} is not a runoff candidate. Valid: {sorted(runoff_candidates)}"
         if target == player_id:

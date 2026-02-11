@@ -32,10 +32,13 @@ class JSONLLogger:
 
 
 class ConsoleTranscript:
-    def __init__(self, show_all: bool = True):
+    def __init__(self, show_all: bool = True, enabled: bool = True):
         self.show_all = show_all
+        self.enabled = enabled
 
     def print_phase_header(self, round_num: int, phase: str):
+        if not self.enabled:
+            return
         if "night" in phase:
             print(f"\n{'='*60}")
             print(f"  NIGHT {round_num}")
@@ -46,6 +49,8 @@ class ConsoleTranscript:
             print(f"{'='*60}")
 
     def print_event(self, event: dict, players: dict):
+        if not self.enabled:
+            return
         event_type = event.get("type")
         channel = event.get("channel", "public")
         speaker_id = event.get("speaker_id")
@@ -143,6 +148,8 @@ class ConsoleTranscript:
         return lines if lines else [""]
 
     def print_role_reveal(self, players: dict):
+        if not self.enabled:
+            return
         print("\n" + "="*60)
         print("  ROLE ASSIGNMENT (Secret - only moderator sees this)")
         print("="*60)

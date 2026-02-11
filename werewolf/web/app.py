@@ -36,16 +36,24 @@ def new_game():
     data = request.get_json() or {}
     n_players = data.get("n_players", 7)
     n_wolves = data.get("n_wolves", 2)
+    n_seers = data.get("n_seers", 1)
     seed = data.get("seed", 42)
     model = data.get("model", "grok-4-1-fast")
 
     api_key = get_api_key()
     if not api_key:
-        return jsonify({"error": "GROK_API_KEY not set in .env"}), 400
+        return jsonify({"error": "Set GROK_API_KEY or XAI_API_KEY in .env"}), 400
+    if n_seers not in (0, 1):
+        return jsonify({"error": "n_seers must be 0 or 1"}), 400
+    if n_wolves >= n_players:
+        return jsonify({"error": "n_wolves must be less than n_players"}), 400
+    if n_wolves + n_seers >= n_players:
+        return jsonify({"error": "Need at least one villager"}), 400
 
     game_engine = GameEngine(
         n_players=n_players,
         n_wolves=n_wolves,
+        n_seers=n_seers,
         seed=seed,
         api_key=api_key,
         model=model,

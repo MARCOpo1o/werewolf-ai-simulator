@@ -11,7 +11,7 @@ Powered by the Grok API; run locally with a simple web UI or (later) at scale fo
 
 ## Setup
 
-1. Create a `.env` file in the project root with your Grok API key (e.g. copy `.env.example` to `.env` and fill it in):
+1. Create a `.env` file in the project root with your API key (e.g. copy `.env.example` to `.env` and fill it in):
 
 ```bash
 GROK_API_KEY=your_api_key_here
@@ -25,6 +25,16 @@ The app also accepts `XAI_API_KEY`. The `.env` file is gitignored so the key is 
 pip install -r requirements.txt
 ```
 
+## Running tests
+
+From the project root:
+
+```bash
+PYTHONPATH=. python3 -m unittest tests.test_validate_action tests.test_roles_and_ids -v
+```
+
+Integration tests (`test_integration_trials.py`) require `GROK_API_KEY` or `XAI_API_KEY` in `.env` and will run real games.
+
 ## Running the game (Web UI)
 
 From the project root:
@@ -34,6 +44,30 @@ python -m werewolf.web.app
 ```
 
 Then open [http://localhost:5000](http://localhost:5000) in your browser. Use the UI to start a new game (choose players, wolves, seed), then advance through night and day phases step by step.
+
+## Running the game (CLI)
+
+```bash
+python -m werewolf --n 7 --wolves 2 --seers 1 --seed 42
+```
+
+Useful flags:
+- `--seers 0` disables the seer role.
+- `--quiet` suppresses transcript output for faster runs.
+- `--model fast|reasoning|<full-model-name>`
+
+## Running batch trials (CLI)
+
+```bash
+python -m werewolf.cli.run_trials --trials 200 --seed-start 1000 --n 7 --wolves 2 --seers 0 --quiet
+```
+
+This command writes:
+- Per-game JSONL logs in `outputs/games/`
+- Trial manifest: `trials_manifest_<run_id>.jsonl`
+- Aggregate summaries: `trials_summary_<run_id>.json` and `.csv`
+
+By default, a preflight health check runs 5 games before the batch.
 
 ### Screenshots
 
@@ -63,6 +97,8 @@ werewolf/
   __main__.py           # CLI entry (python -m werewolf)
   web/
     app.py              # Web UI server (python -m werewolf.web.app)
+  cli/
+    run_trials.py       # Batch trial runner + aggregate summaries
   engine/
     game.py             # Game loop
     state.py            # GameState, PlayerState

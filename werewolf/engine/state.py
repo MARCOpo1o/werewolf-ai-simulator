@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Optional
 import random
+import time
+import uuid
 
 
 @dataclass
@@ -32,8 +34,9 @@ class GameState:
 
     def __post_init__(self):
         if not self.game_id:
-            import time
-            self.game_id = f"game_{self.seed}_{int(time.time())}"
+            ts_ms = int(time.time() * 1000)
+            suffix = uuid.uuid4().hex[:8]
+            self.game_id = f"game_{self.seed}_{ts_ms}_{suffix}"
 
     def get_alive_players(self) -> list[PlayerState]:
         return sorted(

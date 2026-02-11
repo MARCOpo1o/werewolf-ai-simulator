@@ -34,6 +34,10 @@ def setup_logging(debug: bool):
         print("[DEBUG MODE ENABLED - verbose logging active]")
 
 
+def get_api_key() -> str:
+    return os.environ.get("GROK_API_KEY") or os.environ.get("XAI_API_KEY", "")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Run a Werewolf game with AI agents powered by Grok"
@@ -55,6 +59,12 @@ def main():
         type=int,
         default=2,
         help="Number of werewolves (default: 2)"
+    )
+    parser.add_argument(
+        "--seers",
+        type=int,
+        default=1,
+        help="Number of seers (0 or 1, default: 1)"
     )
     parser.add_argument(
         "--output-dir",
@@ -83,6 +93,11 @@ def main():
         action="store_true",
         help="Show full prompts sent to each agent (requires --debug)"
     )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress transcript output for faster batch-style runs"
+    )
 
     args = parser.parse_args()
 
@@ -91,10 +106,10 @@ def main():
 
     model_name = MODEL_PRESETS.get(args.model, args.model)
 
-    api_key = os.environ.get("GROK_API_KEY")
+    api_key = get_api_key()
     if not api_key:
-        print("Error: GROK_API_KEY environment variable is not set.")
-        print("Please set it with: export GROK_API_KEY=your_api_key")
+        print("Error: GROK_API_KEY or XAI_API_KEY environment variable is not set.")
+        print("Please set one of them, e.g. export GROK_API_KEY=your_api_key")
         sys.exit(1)
 
     if args.wolves >= args.n:
@@ -105,23 +120,34 @@ def main():
         print("Error: Need at least 3 players")
         sys.exit(1)
 
+    if args.seers not in (0, 1):
+        print("Error: Number of seers must be 0 or 1")
+        sys.exit(1)
+
+    if args.wolves + args.seers >= args.n:
+        print(f"Error: Need at least 1 villager. Got wolves={args.wolves}, seers={args.seers}, players={args.n}")
+        sys.exit(1)
+
     from werewolf.engine.game import GameEngine
 
-    print(f"Starting Werewolf game with {args.n} players ({args.wolves} wolves)")
-    print(f"Seed: {args.seed}")
-    print(f"Model: {model_name}")
-    print(f"Output: {args.output_dir}")
-    print()
+    if not args.quiet:
+        print(f"Starting Werewolf game with {args.n} players ({args.wolves} wolves, {args.seers} seers)")
+        print(f"Seed: {args.seed}")
+        print(f"Model: {model_name}")
+        print(f"Output: {args.output_dir}")
+        print()
 
     engine = GameEngine(
         n_players=args.n,
         n_wolves=args.wolves,
+        n_seers=args.seers,
         seed=args.seed,
         output_dir=args.output_dir,
         api_key=api_key,
         model=model_name,
         show_all_channels=not args.hide_thoughts,
-        show_prompts=args.show_prompts and args.debug
+        show_prompts=args.show_prompts and args.debug,
+        transcript_enabled=not args.quiet
     )
 
     winner = engine.run()
