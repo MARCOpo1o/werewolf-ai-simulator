@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from typing import Optional, Callable
 
 from werewolf.agents.prompts import get_system_prompt, get_action_instruction
@@ -195,7 +196,130 @@ class AIAgent:
             obj, end = json.JSONDecoder().raw_decode(text, brace)
             return json.dumps(obj)
         except json.JSONDecodeError:
-            return text
+            pass
+        repaired = AIAgent._repair_json(text)
+        return repaired if repaired else text
+
+    @staticmethod
+    def _repair_json(text: str) -> Optional[str]:
+        start = text.find("{")
+        if start == -1:
+            return None
+
+        chars = []
+        i = start
+        in_string = False
+        brace_depth = 0
+        bracket_depth = 0
+
+        while i < len(text):
+            c = text[i]
+
+            if in_string:
+                if c == "\\" and i + 1 < len(text):
+                    next_c = text[i + 1]
+                    if next_c in '"\\bfnrtu/':
+                        chars.append(c)
+                        chars.append(next_c)
+                    else:
+                        chars.append("\\\\")
+                        chars.append(next_c)
+                    i += 2
+                    continue
+                if c == '"':
+                    rest = text[i + 1:].lstrip()
+                    if not rest or rest[0] in ":,}]":
+                        in_string = False
+                        chars.append(c)
+                    else:
+                        chars.append('\\"')
+                    i += 1
+                    continue
+                if c in "\n\r":
+                    chars.append("\\n")
+                    i += 1
+                    continue
+                if c == "\t":
+                    chars.append("\\t")
+                    i += 1
+                    continue
+                chars.append(c)
+                i += 1
+                continue
+
+            if c == '"':
+                in_string = True
+            elif c == "{":
+                brace_depth += 1
+            elif c == "}":
+                brace_depth -= 1
+            elif c == "[":
+                bracket_depth += 1
+            elif c == "]":
+                bracket_depth -= 1
+
+            chars.append(c)
+            i += 1
+
+            if brace_depth == 0 and bracket_depth <= 0:
+                break
+
+        if in_string:
+            chars.append('"')
+
+        joined = "".join(chars).rstrip()
+        if joined.endswith(":"):
+            last_quote = joined.rfind('"', 0, len(joined) - 1)
+            if last_quote != -1:
+                second_last = joined.rfind('"', 0, last_quote)
+                if second_last != -1:
+                    joined = joined[:second_last].rstrip().rstrip(",")
+            else:
+                joined = joined[:-1].rstrip().rstrip(",")
+        elif joined.endswith(","):
+            joined = joined[:-1]
+
+        while bracket_depth > 0:
+            joined += "]"
+            bracket_depth -= 1
+        while brace_depth > 0:
+            joined += "}"
+            brace_depth -= 1
+
+        try:
+            json.loads(joined)
+            return joined
+        except json.JSONDecodeError:
+            return None
+
+    @staticmethod
+    def _regex_extract(text: str) -> Optional[dict]:
+        result = {}
+        action = {}
+
+        for key in ("vote_target", "kill_target", "divine_target"):
+            m = re.search(rf'"{key}"\s*:\s*"?(\w+)"?', text)
+            if m:
+                action[key] = m.group(1)
+
+        for channel in ("public", "werewolf"):
+            m = re.search(
+                rf'"{channel}"\s*:\s*"((?:[^"\\]|\\.)*)"',
+                text,
+            )
+            if m:
+                result.setdefault("say", {})[channel] = m.group(1)
+
+        if not action and "say" not in result:
+            return None
+
+        if action:
+            result["action"] = action
+        else:
+            result["action"] = None
+        result.setdefault("say", None)
+        result["thought"] = "[recovered from malformed response]"
+        return result
 
     def _call_grok(self, user_prompt: str) -> Optional[dict]:
         logger.debug(f"P{self.player_id} calling Grok API with model={self.model}")
@@ -206,17 +330,26 @@ class AIAgent:
             chat.append(user(user_prompt))
             
             response = chat.sample()
-            content = response.content
+            raw_content = response.content
             
             logger.debug(f"P{self.player_id} received response, tokens: {response.usage.completion_tokens if response.usage else 'N/A'}")
             
             if response.usage and hasattr(response.usage, 'reasoning_tokens') and response.usage.reasoning_tokens:
                 logger.info(f"P{self.player_id} reasoning tokens: {response.usage.reasoning_tokens}")
 
-            content = content.strip()
+            content = raw_content.strip()
             content = self._extract_json(content)
             logger.debug(f"P{self.player_id} parsing JSON: {content[:200]}...")
-            return json.loads(content)
+
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                extracted = self._regex_extract(raw_content)
+                if extracted:
+                    logger.warning(f"P{self.player_id} recovered action via regex extraction")
+                    return extracted
+                logger.error(f"P{self.player_id} all parsing failed, raw[:300]: {raw_content[:300]}")
+                return None
 
         except Exception as e:
             logger.error(f"P{self.player_id} API error: {type(e).__name__}: {e}")

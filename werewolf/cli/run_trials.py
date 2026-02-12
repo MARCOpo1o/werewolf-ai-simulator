@@ -200,7 +200,9 @@ def main():
 
     started_at = _now_utc()
     records = []
-    for i in range(args.trials):
+    errors = 0
+    total = args.trials
+    for i in range(total):
         seed = args.seed_start + i
         try:
             record = run_one_trial(
@@ -216,10 +218,25 @@ def main():
             )
             records.append(record)
         except Exception as exc:
+            errors += 1
             if args.continue_on_error:
                 print(f"[trial {i}] failed: {exc}")
                 continue
             raise
+
+        done = i + 1
+        w = sum(1 for r in records if r["winner"] == "wolf")
+        v = sum(1 for r in records if r["winner"] == "village")
+        bar_len = 30
+        filled = int(bar_len * done / total)
+        bar = "█" * filled + "░" * (bar_len - filled)
+        err_str = f" err={errors}" if errors else ""
+        print(
+            f"\r  [{bar}] {done}/{total}  W:{w} V:{v}{err_str}",
+            end="",
+            flush=True,
+        )
+    print()
 
     completed_at = _now_utc()
 
