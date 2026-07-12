@@ -42,6 +42,15 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         model="grok-4.3",
         reasoning_effort="low",
     ),
+    # Google does not return billed cost in API responses, so records from
+    # this model carry cost_source=pricing_table_estimate (LiteLLM price
+    # map), never provider_reported.
+    "gemini_flash_lite": ModelSpec(
+        alias="gemini_flash_lite",
+        provider="litellm",
+        model="gemini/gemini-3.1-flash-lite-preview",
+        api_key_env=("GEMINI_API_KEY",),
+    ),
 }
 
 
