@@ -64,8 +64,12 @@ class AIAgent:
         observation: dict,
         validator: Callable[[dict, dict], tuple[bool, Optional[str]]],
         fallback_fn: Callable[[dict], dict],
-        rng
+        rng,
+        update_memory: bool = True,
     ) -> dict:
+        """update_memory=False makes the call read-only with respect to
+        agent state: any updated_memory in the response is discarded.
+        Used for belief assessments, which must never affect the game."""
         required_action = observation["required_action"]
         call_id = new_call_id()
         logger.debug(f"P{self.player_id} acting: {required_action}")
@@ -157,7 +161,7 @@ class AIAgent:
                 record.validation_ok = True
                 record.error_category = ErrorCategory.COMPLETED
                 self._record(record)
-                if "updated_memory" in parsed:
+                if update_memory and "updated_memory" in parsed:
                     self.memory = parsed["updated_memory"]
                 logger.debug(f"P{self.player_id} action valid")
                 return parsed

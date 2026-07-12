@@ -32,6 +32,25 @@ from werewolf.agents.ai_agent import AIAgent, create_agents
 from werewolf.agents.prompts import get_prompt_version
 from werewolf.llm.ledger import UsageLedger
 
+_CODE_COMMIT = None
+
+
+def get_code_commit() -> Optional[str]:
+    """Short git SHA of the running code, or None outside a checkout."""
+    global _CODE_COMMIT
+    if _CODE_COMMIT is None:
+        import pathlib
+        import subprocess
+        try:
+            _CODE_COMMIT = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=pathlib.Path(__file__).resolve().parents[2],
+                capture_output=True, text=True, timeout=5,
+            ).stdout.strip() or ""
+        except Exception:
+            _CODE_COMMIT = ""
+    return _CODE_COMMIT or None
+
 
 class GameEngine:
     PHASE_ORDER = [
@@ -128,6 +147,7 @@ class GameEngine:
             "trial_index": trial_index,
             "belief_snapshots": belief_snapshots,
             "belief_schema_version": BELIEF_SCHEMA_VERSION if belief_snapshots else None,
+            "code_commit": get_code_commit(),
             "game_id": self.state.game_id,
             "role_map": {
                 str(pid): {"role": p.role, "team": p.team}
@@ -197,7 +217,8 @@ class GameEngine:
 
             elif phase_name == "day_assess":
                 if self.belief_snapshots and self.state.winner is None:
-                    self._set_phase("day_assess")
+                    # direct assignment: no public phase_change event
+                    self.state.phase = "day_assess"
                     self._collect_belief_snapshots(CHECKPOINT_PRE)
                 else:
                     should_return_phase = False
@@ -272,7 +293,9 @@ class GameEngine:
         self._log_game_status()
 
         if self.belief_snapshots:
-            self._set_phase("day_assess")
+            # No _set_phase(): that would log a PUBLIC phase_change event,
+            # making instrumented games observably different to players.
+            self.state.phase = "day_assess"
             self._collect_belief_snapshots(CHECKPOINT_PRE)
 
         self._set_phase("day_discuss")
@@ -398,11 +421,18 @@ class GameEngine:
             spoken.append(player.id)
 
     def _collect_belief_snapshots(self, checkpoint: str):
-        """One private assess_beliefs call per alive player. Snapshots are
-        moderator-only and never enter other players' observations."""
+        """One private assess_beliefs call per alive player.
+
+        STRICTLY READ-ONLY with respect to game state: no memory update,
+        no observation-cursor advance (players re-see the same events in
+        their real turn), and no player-visible events. The public trace
+        of an instrumented game must be identical to an uninstrumented
+        one (enforced by regression test)."""
         for player in self.state.get_alive_players():
             observation = build_observation(self.state, player.id, "assess_beliefs")
-            response = self._get_agent_action(player.id, observation)
+            response = self._get_agent_action(
+                player.id, observation, update_memory=False
+            )
 
             if response.get("thought"):
                 event = create_thought_event(self.state, player.id, response["thought"])
@@ -410,7 +440,7 @@ class GameEngine:
                 self.transcript.print_event(event, self.players)
 
             self._emit_belief_snapshot(player.id, response.get("beliefs"), checkpoint)
-            update_player_seen_index(self.state, player.id)
+            # deliberately NOT calling update_player_seen_index
 
     def _emit_belief_snapshot(self, player_id: int, raw_beliefs, checkpoint: str):
         alive_ids = [p.id for p in self.state.get_alive_players()]
@@ -543,7 +573,9 @@ class GameEngine:
         self.logger.log_event(event)
         self.transcript.print_event(event, self.players)
 
-    def _get_agent_action(self, player_id: int, observation: dict) -> dict:
+    def _get_agent_action(
+        self, player_id: int, observation: dict, update_memory: bool = True
+    ) -> dict:
         agent = self.agents[player_id]
 
         def validator(obs, resp):
@@ -552,7 +584,10 @@ class GameEngine:
         def fallback(obs):
             return get_fallback_action(obs, self.rng)
 
-        return agent.act(observation, validator, fallback, self.rng)
+        return agent.act(
+            observation, validator, fallback, self.rng,
+            update_memory=update_memory,
+        )
 
     def _coerce_player_id(self, value) -> Optional[int]:
         if value is None:
