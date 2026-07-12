@@ -204,3 +204,18 @@ def get_action_instruction(required_action: str, turn_context: dict = None) -> s
         candidates_str = ", ".join(f"P{c}" for c in turn_context["runoff_candidates"])
         template = template.format(runoff_candidates=candidates_str)
     return template
+
+
+_PROMPT_VERSION_CACHE = None
+
+
+def get_prompt_version() -> str:
+    """Content hash of this prompts module, recorded on every usage record
+    so results can be attributed to the exact prompt set that produced them."""
+    global _PROMPT_VERSION_CACHE
+    if _PROMPT_VERSION_CACHE is None:
+        import hashlib
+        import pathlib
+        source = pathlib.Path(__file__).read_bytes()
+        _PROMPT_VERSION_CACHE = hashlib.sha256(source).hexdigest()[:12]
+    return _PROMPT_VERSION_CACHE

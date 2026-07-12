@@ -17,8 +17,15 @@ class FakeProvider:
 
     name = "fake"
 
-    def __init__(self, results: Optional[list[ProviderResult]] = None):
+    def __init__(
+        self,
+        results: Optional[list[ProviderResult]] = None,
+        default: Optional[ProviderResult] = None,
+    ):
+        """`default` (if given) is returned once the scripted queue is
+        exhausted, enabling full-game tests of unknown call counts."""
         self._results: list[ProviderResult] = list(results or [])
+        self._default = default
         self.requests: list[ModelRequest] = []
 
     def enqueue(self, result: ProviderResult) -> None:
@@ -27,6 +34,8 @@ class FakeProvider:
     def complete(self, request: ModelRequest) -> ProviderResult:
         self.requests.append(request)
         if not self._results:
+            if self._default is not None:
+                return self._default
             raise FakeProviderExhausted(
                 f"FakeProvider received call #{len(self.requests)} but only "
                 f"{len(self.requests) - 1} result(s) were scripted"

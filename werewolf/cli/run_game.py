@@ -4,10 +4,11 @@ import os
 import sys
 from pathlib import Path
 
-MODEL_PRESETS = {
-    "fast": "grok-4-1-fast",
-    "reasoning": "grok-4-1-fast-reasoning",
-}
+from werewolf.llm.registry import MODEL_REGISTRY, get_api_key as _registry_key, resolve
+
+# Backward-compatible alias map, derived from the registry (single source
+# of truth in werewolf/llm/registry.py).
+MODEL_PRESETS = {alias: spec.model for alias, spec in MODEL_REGISTRY.items()}
 
 
 def load_env_file():
@@ -34,8 +35,10 @@ def setup_logging(debug: bool):
         print("[DEBUG MODE ENABLED - verbose logging active]")
 
 
-def get_api_key() -> str:
-    return os.environ.get("GROK_API_KEY") or os.environ.get("XAI_API_KEY", "")
+def get_api_key(model: str = "fast") -> str:
+    """Key for the given model alias/ID, from the env vars its registry
+    spec names (default mirrors the legacy GROK_API_KEY/XAI_API_KEY lookup)."""
+    return _registry_key(resolve(model))
 
 
 def main():
@@ -104,12 +107,15 @@ def main():
     load_env_file()
     setup_logging(args.debug)
 
-    model_name = MODEL_PRESETS.get(args.model, args.model)
+    spec = resolve(args.model)
+    model_name = spec.model
+    model_alias = spec.alias
 
-    api_key = get_api_key()
+    api_key = get_api_key(args.model)
     if not api_key:
-        print("Error: GROK_API_KEY or XAI_API_KEY environment variable is not set.")
-        print("Please set one of them, e.g. export GROK_API_KEY=your_api_key")
+        env_names = " or ".join(spec.api_key_env)
+        print(f"Error: {env_names} environment variable is not set.")
+        print(f"Please set it, e.g. export {spec.api_key_env[0]}=your_api_key")
         sys.exit(1)
 
     if args.wolves >= args.n:
@@ -147,13 +153,30 @@ def main():
         model=model_name,
         show_all_channels=not args.hide_thoughts,
         show_prompts=args.show_prompts and args.debug,
-        transcript_enabled=not args.quiet
+        transcript_enabled=not args.quiet,
+        provider=None,
+        model_alias=model_alias,
+        reasoning_effort=spec.reasoning_effort,
     )
 
     winner = engine.run()
 
     print(f"\nGame complete! Winner: {winner}")
     print(f"Log saved to: {engine.logger.filepath}")
+
+    summary = engine.ledger.game_summary()
+    if summary["calls"]:
+        print(
+            f"LLM calls: {summary['calls']} "
+            f"(retries: {summary['retries']}, fallbacks: {summary['fallbacks']})"
+        )
+        cost = summary["cost_usd_total"]
+        if cost is None:
+            print("Cost: unavailable (provider reported no cost data)")
+        else:
+            exact = "" if summary["cost_complete"] else " (incomplete)"
+            print(f"Cost: ${cost:.6f}{exact} "
+                  f"[sources: {', '.join(summary['cost_by_source'])}]")
 
 
 if __name__ == "__main__":

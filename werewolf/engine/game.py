@@ -22,6 +22,8 @@ from werewolf.engine.validate import validate_action, get_fallback_action, _to_i
 from werewolf.engine.logging import JSONLLogger, ConsoleTranscript
 from werewolf.roles.assign import assign_roles
 from werewolf.agents.ai_agent import AIAgent, create_agents
+from werewolf.agents.prompts import get_prompt_version
+from werewolf.llm.ledger import UsageLedger
 
 
 class GameEngine:
@@ -45,7 +47,13 @@ class GameEngine:
         model: str = "grok-4-1-fast",
         show_all_channels: bool = True,
         show_prompts: bool = False,
-        transcript_enabled: bool = True
+        transcript_enabled: bool = True,
+        provider=None,
+        ledger: UsageLedger = None,
+        model_alias: str = None,
+        reasoning_effort: str = None,
+        batch_id: str = None,
+        trial_index: int = None,
     ):
         self.n_players = n_players
         self.n_wolves = n_wolves
@@ -71,10 +79,24 @@ class GameEngine:
             rng=self.rng
         )
 
-        self.agents: dict[int, AIAgent] = create_agents(
-            self.players, api_key, model, show_prompts
-        )
         self.logger = JSONLLogger(output_dir, self.state.game_id)
+        self.ledger = ledger or UsageLedger(sink=self.logger.log_llm_call)
+
+        run_context = {
+            "game_id": self.state.game_id,
+            "seed": seed,
+            "batch_id": batch_id,
+            "trial_index": trial_index,
+            "prompt_version": get_prompt_version(),
+        }
+        self.agents: dict[int, AIAgent] = create_agents(
+            self.players, api_key, model, show_prompts,
+            provider=provider,
+            ledger=self.ledger,
+            run_context=run_context,
+            model_alias=model_alias,
+            reasoning_effort=reasoning_effort,
+        )
         self.transcript = ConsoleTranscript(
             show_all=show_all_channels,
             enabled=transcript_enabled
@@ -89,6 +111,11 @@ class GameEngine:
             "n_wolves": n_wolves,
             "n_seers": n_seers,
             "model": model,
+            "model_alias": model_alias,
+            "reasoning_effort": reasoning_effort,
+            "prompt_version": run_context["prompt_version"],
+            "batch_id": batch_id,
+            "trial_index": trial_index,
             "game_id": self.state.game_id,
             "role_map": {
                 str(pid): {"role": p.role, "team": p.team}
@@ -491,4 +518,5 @@ class GameEngine:
         self.logger.log_event(event)
         self.transcript.print_event(event, self.players)
 
+        self.logger.log_usage_summary(self.ledger.game_summary())
         self.logger.log_outcome(winner, self.state.round, remaining)

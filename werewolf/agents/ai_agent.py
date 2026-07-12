@@ -1,52 +1,63 @@
 import json
 import logging
-import os
 import re
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 from werewolf.agents.prompts import get_system_prompt, get_action_instruction
+from werewolf.llm.provider import ModelRequest, Provider, ProviderResult
+from werewolf.llm.records import (
+    CallContext,
+    ErrorCategory,
+    UsageRecord,
+    new_call_id,
+)
 
 logger = logging.getLogger("werewolf.agent")
 
-try:
-    from xai_sdk import Client
-    from xai_sdk.chat import system, user
-    HAS_XAI = True
-except ImportError:
-    HAS_XAI = False
-    logger.warning("xai-sdk package not installed. Run: pip install xai-sdk")
+MAX_RETRIES = 3
 
 
 class AIAgent:
+    """Prompt construction, response parsing, retry/fallback policy.
+
+    Provider-agnostic: all API invocation goes through the injected
+    Provider; every attempt is recorded to the injected ledger. This class
+    never sees API keys or provider-specific response formats.
+    """
+
     def __init__(
         self,
         player_id: int,
         role: str,
         team: str,
-        api_key: str,
+        provider: Optional[Provider] = None,
         wolf_roster: list[int] = None,
         model: str = "grok-4-1-fast",
-        show_prompts: bool = False
+        show_prompts: bool = False,
+        ledger=None,
+        run_context: Optional[dict] = None,
+        model_alias: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
     ):
         self.player_id = player_id
         self.role = role
         self.team = team
-        self.api_key = api_key
+        self.provider = provider
         self.wolf_roster = wolf_roster or []
         self.model = model
+        self.model_alias = model_alias
+        self.reasoning_effort = reasoning_effort
         self.memory = {}
         self.show_prompts = show_prompts
+        self.ledger = ledger
+        self.run_context = run_context or {}
         self.system_prompt = get_system_prompt(role, player_id, wolf_roster)
-        
-        if HAS_XAI and api_key:
-            self.client = Client(
-                api_key=api_key,
-                timeout=120
-            )
-        else:
-            self.client = None
-            
+
         logger.debug(f"P{player_id} initialized as {role} ({team})")
+
+    # ------------------------------------------------------------------
+    # Main entry point
+    # ------------------------------------------------------------------
 
     def act(
         self,
@@ -55,63 +66,211 @@ class AIAgent:
         fallback_fn: Callable[[dict], dict],
         rng
     ) -> dict:
-        if not HAS_XAI or not self.client:
-            logger.error("xai-sdk not available, using fallback")
-            fallback = fallback_fn(observation)
-            fallback["thought"] = "xai-sdk not installed - using random action. Run: pip install xai-sdk"
-            return fallback
-            
-        max_retries = 3
-        errors = []
         required_action = observation["required_action"]
+        call_id = new_call_id()
         logger.debug(f"P{self.player_id} acting: {required_action}")
 
-        for attempt in range(max_retries):
-            logger.debug(f"P{self.player_id} attempt {attempt + 1}/{max_retries}")
-            try:
-                user_prompt = self._build_user_prompt(observation, errors)
-                
-                if self.show_prompts:
-                    print(f"\n{'='*60}")
-                    print(f"  PROMPT TO P{self.player_id} ({self.role})")
-                    print(f"{'='*60}")
-                    print(f"[SYSTEM PROMPT]\n{self.system_prompt[:500]}...")
-                    print(f"\n[USER PROMPT]\n{user_prompt}")
-                    print(f"{'='*60}\n")
-                
-                logger.debug(f"P{self.player_id} prompt length: {len(user_prompt)} chars")
-                
-                response = self._call_grok(user_prompt)
+        if self.provider is None:
+            logger.error("No LLM provider available, using fallback")
+            self._record_non_api(
+                observation, call_id, attempt=0,
+                category=ErrorCategory.MISSING_API_KEY,
+            )
+            self._record_non_api(
+                observation, call_id, attempt=0,
+                category=ErrorCategory.FALLBACK_USED,
+            )
+            fallback = fallback_fn(observation)
+            fallback["thought"] = (
+                "No LLM provider available (missing API key or SDK) - "
+                "using random action."
+            )
+            return fallback
 
-                if response is None:
-                    error_msg = "API call failed or returned invalid JSON"
-                    logger.warning(f"P{self.player_id}: {error_msg}")
-                    errors.append(error_msg)
-                    continue
+        errors = []
+        attempts_made = 0
+        for attempt in range(1, MAX_RETRIES + 1):
+            attempts_made = attempt
+            logger.debug(f"P{self.player_id} attempt {attempt}/{MAX_RETRIES}")
+            user_prompt = self._build_user_prompt(observation, errors)
 
-                logger.debug(f"P{self.player_id} raw response: {json.dumps(response)[:200]}...")
+            if self.show_prompts:
+                print(f"\n{'='*60}")
+                print(f"  PROMPT TO P{self.player_id} ({self.role})")
+                print(f"{'='*60}")
+                print(f"[SYSTEM PROMPT]\n{self.system_prompt[:500]}...")
+                print(f"\n[USER PROMPT]\n{user_prompt}")
+                print(f"{'='*60}\n")
 
-                if not response.get("thought"):
-                    response["thought"] = "No specific reasoning provided - making decision based on available information."
+            result = self.provider.complete(ModelRequest(
+                model=self.model,
+                system_prompt=self.system_prompt,
+                user_prompt=user_prompt,
+                reasoning_effort=self.reasoning_effort,
+            ))
+            record = self._record_from_result(
+                observation, call_id, attempt, result
+            )
 
-                is_valid, error = validator(observation, response)
-                if is_valid:
-                    if "updated_memory" in response:
-                        self.memory = response["updated_memory"]
-                    logger.debug(f"P{self.player_id} action valid")
-                    return response
+            if not result.ok:
+                logger.warning(
+                    f"P{self.player_id} API failure "
+                    f"({result.error_category and result.error_category.value}): "
+                    f"{result.error_message}"
+                )
+                self._record(record)
+                if result.retryable is False:
+                    break  # retrying cannot help (auth, context window, ...)
+                continue
 
-                logger.warning(f"P{self.player_id} invalid action: {error}")
-                errors.append(error)
+            parsed, parse_method = self._parse_response(result.text)
+            record.parse_method = parse_method
+            if parse_method == "regex":
+                logger.warning(
+                    f"P{self.player_id} recovered action via regex extraction"
+                )
 
-            except Exception as e:
-                logger.error(f"P{self.player_id} exception: {str(e)}")
-                errors.append(f"Exception: {str(e)}")
+            if parsed is None:
+                record.parse_ok = False
+                record.error_category = ErrorCategory.MALFORMED_JSON
+                record.retryable = True
+                self._record(record)
+                errors.append(
+                    "Your previous response was not valid JSON. "
+                    "Respond with a single valid JSON object only."
+                )
+                logger.error(
+                    f"P{self.player_id} parsing failed, "
+                    f"raw[:300]: {str(result.text)[:300]}"
+                )
+                continue
 
-        logger.warning(f"P{self.player_id} using fallback after {max_retries} failures")
+            record.parse_ok = True
+            if not parsed.get("thought"):
+                parsed["thought"] = (
+                    "No specific reasoning provided - making decision based "
+                    "on available information."
+                )
+
+            is_valid, error = validator(observation, parsed)
+            if is_valid:
+                record.validation_ok = True
+                record.error_category = ErrorCategory.COMPLETED
+                self._record(record)
+                if "updated_memory" in parsed:
+                    self.memory = parsed["updated_memory"]
+                logger.debug(f"P{self.player_id} action valid")
+                return parsed
+
+            record.validation_ok = False
+            record.error_category = ErrorCategory.INVALID_GAME_ACTION
+            record.retryable = True
+            self._record(record)
+            logger.warning(f"P{self.player_id} invalid action: {error}")
+            errors.append(error)
+
+        logger.warning(
+            f"P{self.player_id} using fallback after {attempts_made} attempt(s)"
+        )
+        self._record_non_api(
+            observation, call_id, attempt=attempts_made,
+            category=ErrorCategory.FALLBACK_USED,
+        )
         fallback = fallback_fn(observation)
-        fallback["thought"] = "Not enough information or repeated errors - choosing randomly."
+        fallback["thought"] = (
+            "Not enough information or repeated errors - choosing randomly."
+        )
         return fallback
+
+    # ------------------------------------------------------------------
+    # Usage recording
+    # ------------------------------------------------------------------
+
+    def _build_context(self, observation: dict) -> CallContext:
+        rc = self.run_context
+        return CallContext(
+            game_id=rc.get("game_id", ""),
+            batch_id=rc.get("batch_id"),
+            trial_index=rc.get("trial_index"),
+            seed=rc.get("seed"),
+            round=observation.get("round", 0),
+            phase=observation.get("phase", ""),
+            required_action=observation.get("required_action", ""),
+            player_id=self.player_id,
+            player_role=self.role,
+            player_team=self.team,
+            prompt_version=rc.get("prompt_version"),
+            model_alias=self.model_alias,
+        )
+
+    def _record_from_result(
+        self, observation: dict, call_id: str, attempt: int,
+        result: ProviderResult,
+    ) -> UsageRecord:
+        return UsageRecord(
+            context=self._build_context(observation),
+            provider=self.provider.name if self.provider else "none",
+            requested_model=self.model,
+            call_id=call_id,
+            attempt=attempt,
+            resolved_model=result.resolved_model,
+            usage=result.usage,
+            cost=result.cost,
+            latency_ms=result.latency_ms,
+            provider_request_id=result.provider_request_id,
+            finish_reason=result.finish_reason,
+            api_attempted=True,
+            api_ok=result.ok,
+            error_category=result.error_category,
+            retryable=result.retryable,
+            provider_metadata=dict(result.provider_metadata),
+        )
+
+    def _record_non_api(
+        self, observation: dict, call_id: str, attempt: int,
+        category: ErrorCategory,
+    ) -> None:
+        self._record(UsageRecord(
+            context=self._build_context(observation),
+            provider=self.provider.name if self.provider else "none",
+            requested_model=self.model,
+            call_id=call_id,
+            attempt=attempt,
+            api_attempted=False,
+            api_ok=False,
+            error_category=category,
+            retryable=False,
+        ))
+
+    def _record(self, record: UsageRecord) -> None:
+        if self.ledger is not None:
+            self.ledger.record(record)
+
+    # ------------------------------------------------------------------
+    # Parsing (unchanged semantics; now reports which method succeeded)
+    # ------------------------------------------------------------------
+
+    def _parse_response(self, raw: str) -> tuple[Optional[dict], Optional[str]]:
+        """Returns (parsed_dict, method) where method is one of
+        'direct' | 'repaired' | 'regex', or (None, None) on failure."""
+        content = raw.strip()
+        brace = content.find("{")
+        if brace != -1:
+            try:
+                obj, _ = json.JSONDecoder().raw_decode(content, brace)
+                if isinstance(obj, dict):
+                    return obj, "direct"
+            except json.JSONDecodeError:
+                pass
+            repaired = self._repair_json(content)
+            if repaired:
+                obj = json.loads(repaired)
+                if isinstance(obj, dict):
+                    return obj, "repaired"
+        extracted = self._regex_extract(raw)
+        if extracted:
+            return extracted, "regex"
+        return None, None
 
     def _build_user_prompt(self, observation: dict, errors: list[str]) -> str:
         required_action = observation["required_action"]
@@ -186,19 +345,6 @@ class AIAgent:
             return f"[STATUS] Wolves: {payload.get('alive_wolves')}, Village: {payload.get('alive_villagers')}"
         else:
             return f"[{etype.upper()}] {json.dumps(payload)}"
-
-    @staticmethod
-    def _extract_json(text: str) -> str:
-        brace = text.find("{")
-        if brace == -1:
-            return text
-        try:
-            obj, end = json.JSONDecoder().raw_decode(text, brace)
-            return json.dumps(obj)
-        except json.JSONDecodeError:
-            pass
-        repaired = AIAgent._repair_json(text)
-        return repaired if repaired else text
 
     @staticmethod
     def _repair_json(text: str) -> Optional[str]:
@@ -321,48 +467,26 @@ class AIAgent:
         result["thought"] = "[recovered from malformed response]"
         return result
 
-    def _call_grok(self, user_prompt: str) -> Optional[dict]:
-        logger.debug(f"P{self.player_id} calling Grok API with model={self.model}")
-
-        try:
-            chat = self.client.chat.create(model=self.model)
-            chat.append(system(self.system_prompt))
-            chat.append(user(user_prompt))
-            
-            response = chat.sample()
-            raw_content = response.content
-            
-            logger.debug(f"P{self.player_id} received response, tokens: {response.usage.completion_tokens if response.usage else 'N/A'}")
-            
-            if response.usage and hasattr(response.usage, 'reasoning_tokens') and response.usage.reasoning_tokens:
-                logger.info(f"P{self.player_id} reasoning tokens: {response.usage.reasoning_tokens}")
-
-            content = raw_content.strip()
-            content = self._extract_json(content)
-            logger.debug(f"P{self.player_id} parsing JSON: {content[:200]}...")
-
-            try:
-                return json.loads(content)
-            except json.JSONDecodeError:
-                extracted = self._regex_extract(raw_content)
-                if extracted:
-                    logger.warning(f"P{self.player_id} recovered action via regex extraction")
-                    return extracted
-                logger.error(f"P{self.player_id} all parsing failed, raw[:300]: {raw_content[:300]}")
-                return None
-
-        except Exception as e:
-            logger.error(f"P{self.player_id} API error: {type(e).__name__}: {e}")
-            print(f"[API Error] P{self.player_id}: {e}")
-            return None
-
 
 def create_agents(
     players: dict,
-    api_key: str,
+    api_key: str = "",
     model: str = "grok-4-1-fast",
-    show_prompts: bool = False
+    show_prompts: bool = False,
+    provider: Optional[Provider] = None,
+    ledger=None,
+    run_context: Optional[dict] = None,
+    model_alias: Optional[str] = None,
+    reasoning_effort: Optional[str] = None,
 ) -> dict[int, AIAgent]:
+    """Backward-compatible factory. If no provider is injected, one is
+    built from (model, api_key) via the registry; with no key or SDK the
+    provider stays None and agents use the random-fallback path (preserves
+    the historical no-key test behavior)."""
+    if provider is None and api_key:
+        from werewolf.llm.registry import build_provider, resolve
+        provider = build_provider(resolve(model), api_key=api_key)
+
     wolf_roster = [p.id for p in players.values() if p.role == "werewolf"]
 
     agents = {}
@@ -371,10 +495,14 @@ def create_agents(
             player_id=pid,
             role=player.role,
             team=player.team,
-            api_key=api_key,
+            provider=provider,
             wolf_roster=wolf_roster if player.role == "werewolf" else None,
             model=model,
-            show_prompts=show_prompts
+            show_prompts=show_prompts,
+            ledger=ledger,
+            run_context=run_context,
+            model_alias=model_alias,
+            reasoning_effort=reasoning_effort,
         )
 
     return agents

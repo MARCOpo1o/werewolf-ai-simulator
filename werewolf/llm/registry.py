@@ -60,6 +60,32 @@ def get_api_key(spec: ModelSpec) -> str:
     return ""
 
 
+def build_provider(spec: ModelSpec, api_key: Optional[str] = None):
+    """Construct a Provider for the spec, or None when no key/SDK is
+    available (callers then use the existing random-fallback path).
+
+    The key is passed straight into the provider client and is not
+    retained by this module.
+    """
+    key = api_key if api_key is not None else get_api_key(spec)
+    if not key:
+        return None
+
+    if spec.provider == "xai":
+        try:
+            from werewolf.llm.xai_provider import XAIProvider
+            return XAIProvider(api_key=key)
+        except RuntimeError:  # xai-sdk not installed
+            return None
+    if spec.provider == "litellm":
+        try:
+            from werewolf.llm.litellm_provider import LiteLLMProvider
+            return LiteLLMProvider(api_key=key)
+        except (ImportError, RuntimeError):
+            return None
+    raise ValueError(f"Unknown provider: {spec.provider}")
+
+
 def registry_snapshot() -> dict:
     """Serializable snapshot of the registry for experiment config logs.
     Contains env-var NAMES only, never values."""

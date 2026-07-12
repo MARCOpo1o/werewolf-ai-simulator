@@ -15,6 +15,13 @@ class JSONLLogger:
     def log_event(self, event: dict):
         self._write({"type": "event", "event": event})
 
+    def log_llm_call(self, record: dict):
+        """One line per LLM call attempt (schema in werewolf/llm/records.py)."""
+        self._write({"type": "llm_call", **record})
+
+    def log_usage_summary(self, summary: dict):
+        self._write({"type": "usage_summary", "usage": summary})
+
     def log_outcome(self, winner: str, rounds: int, remaining: list[int]):
         self._write({
             "type": "outcome",
