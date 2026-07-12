@@ -12,12 +12,38 @@ from typing import Optional, Protocol, runtime_checkable
 from werewolf.llm.records import CostInfo, ErrorCategory, TokenUsage
 
 
+@dataclass(frozen=True)
+class GenerationConfig:
+    """Sampling parameters locked per experiment condition. None means
+    'provider default' - acceptable for exploration, but benchmark runs
+    should pin every field. Requested values are logged on every usage
+    record; params a provider/SDK cannot apply are reported in
+    provider_metadata.generation_dropped rather than silently ignored."""
+
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    max_output_tokens: Optional[int] = None
+    reasoning_effort: Optional[str] = None  # xAI/Gemini effort or budget
+    provider_seed: Optional[int] = None
+    structured_output: bool = False  # request JSON-mode where supported
+
+    def to_json_dict(self) -> dict:
+        return {
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+            "max_output_tokens": self.max_output_tokens,
+            "reasoning_effort": self.reasoning_effort,
+            "provider_seed": self.provider_seed,
+            "structured_output": self.structured_output,
+        }
+
+
 @dataclass
 class ModelRequest:
     model: str
     system_prompt: str
     user_prompt: str
-    reasoning_effort: Optional[str] = None  # xAI: none|low|medium|high
+    generation: GenerationConfig = field(default_factory=GenerationConfig)
 
 
 @dataclass

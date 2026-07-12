@@ -79,6 +79,34 @@ def _sanitize_error_message(exc: Exception, limit: int = 300) -> str:
     return " ".join(redacted)[:limit]
 
 
+def build_completion_kwargs(request: ModelRequest, api_key: str, timeout: int) -> dict:
+    """Map GenerationConfig onto litellm.completion kwargs (only fields
+    that were explicitly requested)."""
+    g = request.generation
+    kwargs = dict(
+        model=request.model,
+        messages=[
+            {"role": "system", "content": request.system_prompt},
+            {"role": "user", "content": request.user_prompt},
+        ],
+        api_key=api_key,
+        timeout=timeout,
+    )
+    if g.reasoning_effort is not None:
+        kwargs["reasoning_effort"] = g.reasoning_effort
+    if g.temperature is not None:
+        kwargs["temperature"] = g.temperature
+    if g.top_p is not None:
+        kwargs["top_p"] = g.top_p
+    if g.max_output_tokens is not None:
+        kwargs["max_tokens"] = g.max_output_tokens
+    if g.provider_seed is not None:
+        kwargs["seed"] = g.provider_seed
+    if g.structured_output:
+        kwargs["response_format"] = {"type": "json_object"}
+    return kwargs
+
+
 class LiteLLMProvider:
     name = "litellm"
 
@@ -93,17 +121,9 @@ class LiteLLMProvider:
     def complete(self, request: ModelRequest) -> ProviderResult:
         started = time.monotonic()
         try:
-            kwargs = dict(
-                model=request.model,
-                messages=[
-                    {"role": "system", "content": request.system_prompt},
-                    {"role": "user", "content": request.user_prompt},
-                ],
-                api_key=self._api_key,
-                timeout=self._timeout,
+            kwargs = build_completion_kwargs(
+                request, api_key=self._api_key, timeout=self._timeout,
             )
-            if request.reasoning_effort is not None:
-                kwargs["reasoning_effort"] = request.reasoning_effort
             response = litellm.completion(**kwargs)
             latency_ms = int((time.monotonic() - started) * 1000)
             return self._result_from_response(response, latency_ms)

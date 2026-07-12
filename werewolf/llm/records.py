@@ -15,7 +15,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
-SCHEMA_VERSION = 1
+# v2: added requested_generation (GenerationConfig snapshot per attempt)
+SCHEMA_VERSION = 2
 
 # xAI: 1 USD == 10^10 ticks (https://docs.x.ai/developers/cost-tracking)
 TICKS_PER_USD = 10_000_000_000
@@ -184,6 +185,7 @@ class UsageRecord:
     validation_ok: Optional[bool] = None
     error_category: Optional[ErrorCategory] = None
     retryable: Optional[bool] = None
+    requested_generation: Optional[dict] = None
     provider_metadata: dict = field(default_factory=dict)
 
     def to_json_dict(self) -> dict:
@@ -210,5 +212,6 @@ class UsageRecord:
                 self.error_category.value if self.error_category else None
             ),
             "retryable": self.retryable,
+            "requested_generation": self.requested_generation,
             "provider_metadata": _scrub_metadata(self.provider_metadata),
         }

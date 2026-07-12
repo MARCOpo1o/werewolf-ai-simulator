@@ -27,13 +27,23 @@ def create_message_event(
     game_state,
     channel: str,
     speaker_id: int,
-    text: str
+    text: str,
+    truncated_from: int = None,
+    meta: dict = None,
 ) -> dict:
+    """`truncated_from` records the original length when a message was cut
+    at the bandwidth limit; `meta` carries analysis fields such as
+    discussion_cycle/speaker_position."""
+    payload = {"text": text}
+    if truncated_from is not None:
+        payload["truncated_from"] = truncated_from
+    if meta:
+        payload.update(meta)
     return create_event(
         game_state,
         event_type="message",
         channel=channel,
-        payload={"text": text},
+        payload=payload,
         speaker_id=speaker_id
     )
 

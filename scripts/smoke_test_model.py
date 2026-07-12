@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from werewolf.cli.run_game import load_env_file
-from werewolf.llm.provider import ModelRequest
+from werewolf.llm.provider import GenerationConfig, ModelRequest
 from werewolf.llm.registry import build_provider, get_api_key, resolve
 
 
@@ -43,7 +43,7 @@ def main():
         model=spec.model,
         system_prompt="Respond with JSON only.",
         user_prompt='Respond with exactly this JSON: {"hello": "werewolf"}',
-        reasoning_effort=spec.reasoning_effort,
+        generation=GenerationConfig(reasoning_effort=spec.reasoning_effort),
     ))
 
     print(f"\nok:              {result.ok}")

@@ -30,7 +30,14 @@ from werewolf.engine.logging import JSONLLogger, ConsoleTranscript
 from werewolf.roles.assign import assign_roles
 from werewolf.agents.ai_agent import AIAgent, create_agents
 from werewolf.agents.prompts import get_prompt_version
+from werewolf.engine.limits import (
+    PUBLIC_MESSAGE_MAX_CHARS,
+    WOLF_MESSAGE_MAX_CHARS,
+    limits_dict,
+    truncate_text,
+)
 from werewolf.llm.ledger import UsageLedger
+from werewolf.llm.provider import GenerationConfig
 
 _CODE_COMMIT = None
 
@@ -82,6 +89,8 @@ class GameEngine:
         batch_id: str = None,
         trial_index: int = None,
         belief_snapshots: bool = True,
+        generation_config: GenerationConfig = None,
+        discussion_cycles: int = 2,
     ):
         self.n_players = n_players
         self.n_wolves = n_wolves
@@ -91,6 +100,12 @@ class GameEngine:
         self.api_key = api_key
         self.model = model
         self.belief_snapshots = belief_snapshots
+        self.generation_config = generation_config or GenerationConfig(
+            reasoning_effort=reasoning_effort
+        )
+        if discussion_cycles < 1:
+            raise ValueError("discussion_cycles must be >= 1")
+        self.discussion_cycles = discussion_cycles
 
         self.rng = random.Random(seed)
         self.players = assign_roles(n_players, n_wolves, self.rng, n_seers=n_seers)
@@ -124,7 +139,7 @@ class GameEngine:
             ledger=self.ledger,
             run_context=run_context,
             model_alias=model_alias,
-            reasoning_effort=reasoning_effort,
+            generation=self.generation_config,
         )
         self.transcript = ConsoleTranscript(
             show_all=show_all_channels,
@@ -147,6 +162,9 @@ class GameEngine:
             "trial_index": trial_index,
             "belief_snapshots": belief_snapshots,
             "belief_schema_version": BELIEF_SCHEMA_VERSION if belief_snapshots else None,
+            "generation_config": self.generation_config.to_json_dict(),
+            "discussion_cycles": self.discussion_cycles,
+            "limits": limits_dict(),
             "code_commit": get_code_commit(),
             "game_id": self.state.game_id,
             "role_map": {
@@ -326,8 +344,12 @@ class GameEngine:
                 self.transcript.print_event(event, self.players)
 
             if response.get("say") and response["say"].get("werewolf"):
+                text, truncated_from = truncate_text(
+                    response["say"]["werewolf"], WOLF_MESSAGE_MAX_CHARS
+                )
                 event = create_message_event(
-                    self.state, "werewolf", wolf.id, response["say"]["werewolf"]
+                    self.state, "werewolf", wolf.id, text,
+                    truncated_from=truncated_from,
                 )
                 self.logger.log_event(event)
                 self.transcript.print_event(event, self.players)
@@ -389,36 +411,61 @@ class GameEngine:
         update_player_seen_index(self.state, seer_id)
 
     def _day_discussion(self):
-        alive_players = self.state.get_alive_players()
-        speaking_order = [p.id for p in alive_players]
-        spoken = []
+        """Multi-cycle discussion with seeded, counterbalanced order.
 
-        for i, player in enumerate(alive_players):
-            turn_context = {
-                "speaking_order": speaking_order,
-                "your_position": f"{i + 1} of {len(alive_players)}",
-                "already_spoken": spoken.copy(),
-                "yet_to_speak": speaking_order[i + 1:]
-            }
-            observation = build_observation(
-                self.state, player.id, "speak_public", turn_context
-            )
-            response = self._get_agent_action(player.id, observation)
+        A single ascending-ID pass gives the first speaker no one to react
+        to and the last speaker an unrebuttable word - a huge seat
+        advantage that confounds adaptation measurements. Instead: the
+        speaking order is shuffled deterministically per (seed, round) by
+        a dedicated RNG (independent of the game RNG, so fallback behavior
+        is unaffected), and even-numbered cycles reverse it, giving every
+        player a chance both to react and to be rebutted."""
+        alive_ids = [p.id for p in self.state.get_alive_players()]
+        order_rng = random.Random(f"{self.seed}:order:{self.state.round}")
+        base_order = list(alive_ids)
+        order_rng.shuffle(base_order)
 
-            if response.get("thought"):
-                event = create_thought_event(self.state, player.id, response["thought"])
-                self.logger.log_event(event)
-                self.transcript.print_event(event, self.players)
-
-            if response.get("say") and response["say"].get("public"):
-                event = create_message_event(
-                    self.state, "public", player.id, response["say"]["public"]
+        for cycle in range(1, self.discussion_cycles + 1):
+            order = base_order if cycle % 2 == 1 else list(reversed(base_order))
+            spoken = []
+            for position, player_id in enumerate(order):
+                turn_context = {
+                    "speaking_order": order,
+                    "your_position": f"{position + 1} of {len(order)}",
+                    "already_spoken": spoken.copy(),
+                    "yet_to_speak": order[position + 1:],
+                    "discussion_cycle": cycle,
+                    "total_cycles": self.discussion_cycles,
+                }
+                observation = build_observation(
+                    self.state, player_id, "speak_public", turn_context
                 )
-                self.logger.log_event(event)
-                self.transcript.print_event(event, self.players)
+                response = self._get_agent_action(player_id, observation)
 
-            update_player_seen_index(self.state, player.id)
-            spoken.append(player.id)
+                if response.get("thought"):
+                    event = create_thought_event(
+                        self.state, player_id, response["thought"]
+                    )
+                    self.logger.log_event(event)
+                    self.transcript.print_event(event, self.players)
+
+                if response.get("say") and response["say"].get("public"):
+                    text, truncated_from = truncate_text(
+                        response["say"]["public"], PUBLIC_MESSAGE_MAX_CHARS
+                    )
+                    event = create_message_event(
+                        self.state, "public", player_id, text,
+                        truncated_from=truncated_from,
+                        meta={
+                            "discussion_cycle": cycle,
+                            "speaker_position": position + 1,
+                        },
+                    )
+                    self.logger.log_event(event)
+                    self.transcript.print_event(event, self.players)
+
+                update_player_seen_index(self.state, player_id)
+                spoken.append(player_id)
 
     def _collect_belief_snapshots(self, checkpoint: str):
         """One private assess_beliefs call per alive player.

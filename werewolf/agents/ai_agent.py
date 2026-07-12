@@ -3,8 +3,18 @@ import logging
 import re
 from typing import Callable, Optional
 
-from werewolf.agents.prompts import get_system_prompt, get_action_instruction
-from werewolf.llm.provider import ModelRequest, Provider, ProviderResult
+from werewolf.agents.prompts import (
+    get_system_prompt,
+    get_action_instruction,
+    get_limits_notice,
+)
+from werewolf.engine.limits import MEMORY_MAX_CHARS, truncate_text
+from werewolf.llm.provider import (
+    GenerationConfig,
+    ModelRequest,
+    Provider,
+    ProviderResult,
+)
 from werewolf.llm.records import (
     CallContext,
     ErrorCategory,
@@ -38,6 +48,7 @@ class AIAgent:
         run_context: Optional[dict] = None,
         model_alias: Optional[str] = None,
         reasoning_effort: Optional[str] = None,
+        generation: Optional[GenerationConfig] = None,
     ):
         self.player_id = player_id
         self.role = role
@@ -46,7 +57,10 @@ class AIAgent:
         self.wolf_roster = wolf_roster or []
         self.model = model
         self.model_alias = model_alias
-        self.reasoning_effort = reasoning_effort
+        self.generation = generation or GenerationConfig(
+            reasoning_effort=reasoning_effort
+        )
+        self.reasoning_effort = self.generation.reasoning_effort
         self.memory = {}
         self.show_prompts = show_prompts
         self.ledger = ledger
@@ -110,7 +124,7 @@ class AIAgent:
                 model=self.model,
                 system_prompt=self.system_prompt,
                 user_prompt=user_prompt,
-                reasoning_effort=self.reasoning_effort,
+                generation=self.generation,
             ))
             record = self._record_from_result(
                 observation, call_id, attempt, result
@@ -227,6 +241,7 @@ class AIAgent:
             api_ok=result.ok,
             error_category=result.error_category,
             retryable=result.retryable,
+            requested_generation=self.generation.to_json_dict(),
             provider_metadata=dict(result.provider_metadata),
         )
 
@@ -304,8 +319,20 @@ class AIAgent:
             for event in observation["recent_events"][-10:]:
                 prompt_parts.append(self._format_event(event))
 
-        prompt_parts.append(f"\n=== YOUR MEMORY ===\n{json.dumps(self.memory, indent=2)}")
+        # Persistent-memory bandwidth cap: a verbose model must not receive
+        # more effective context than a concise one. Stored memory is kept
+        # intact; only what is rendered into the prompt is bounded.
+        memory_json, truncated_from = truncate_text(
+            json.dumps(self.memory, indent=2), MEMORY_MAX_CHARS
+        )
+        if truncated_from is not None:
+            memory_json += (
+                f"\n...[memory truncated: {truncated_from} chars exceeds "
+                f"the {MEMORY_MAX_CHARS}-char limit]"
+            )
+        prompt_parts.append(f"\n=== YOUR MEMORY ===\n{memory_json}")
         prompt_parts.append(f"\n=== INSTRUCTIONS ===\n{action_instruction}")
+        prompt_parts.append(get_limits_notice())
         prompt_parts.append("\nIMPORTANT: Always explain your reasoning in the 'thought' field. If you don't have enough information, say so.")
 
         if errors:
@@ -482,6 +509,7 @@ def create_agents(
     run_context: Optional[dict] = None,
     model_alias: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
+    generation: Optional[GenerationConfig] = None,
 ) -> dict[int, AIAgent]:
     """Backward-compatible factory. If no provider is injected, one is
     built from (model, api_key) via the registry; with no key or SDK the
@@ -507,6 +535,7 @@ def create_agents(
             run_context=run_context,
             model_alias=model_alias,
             reasoning_effort=reasoning_effort,
+            generation=generation,
         )
 
     return agents

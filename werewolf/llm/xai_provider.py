@@ -67,6 +67,33 @@ def classify_exception(exc: Exception) -> ErrorCategory:
     return ErrorCategory.PROVIDER_ERROR
 
 
+def build_chat_kwargs(request: ModelRequest) -> dict:
+    """Map GenerationConfig onto xai-sdk chat.create kwargs (only the
+    fields that were explicitly requested)."""
+    g = request.generation
+    kwargs = {"model": request.model}
+    if g.reasoning_effort is not None:
+        kwargs["reasoning_effort"] = g.reasoning_effort
+    if g.temperature is not None:
+        kwargs["temperature"] = g.temperature
+    if g.top_p is not None:
+        kwargs["top_p"] = g.top_p
+    if g.max_output_tokens is not None:
+        kwargs["max_tokens"] = g.max_output_tokens
+    if g.provider_seed is not None:
+        kwargs["seed"] = g.provider_seed
+    return kwargs
+
+
+def _unexpected_kwarg_name(exc: TypeError, kwargs: dict):
+    """Extract the offending kwarg from a TypeError, if identifiable."""
+    text = str(exc)
+    for name in kwargs:
+        if f"'{name}'" in text:
+            return name
+    return None
+
+
 def _sanitize_error_message(exc: Exception, limit: int = 300) -> str:
     """Exception text with anything resembling a key redacted."""
     text = f"{type(exc).__name__}: {exc}"
@@ -94,26 +121,15 @@ class XAIProvider:
     def complete(self, request: ModelRequest) -> ProviderResult:
         started = time.monotonic()
         try:
-            if request.reasoning_effort is not None:
-                try:
-                    chat = self._client.chat.create(
-                        model=request.model,
-                        reasoning_effort=request.reasoning_effort,
-                    )
-                except TypeError:
-                    # older xai-sdk without reasoning_effort support
-                    logger.warning(
-                        "xai-sdk ignored reasoning_effort=%s (unsupported)",
-                        request.reasoning_effort,
-                    )
-                    chat = self._client.chat.create(model=request.model)
-            else:
-                chat = self._client.chat.create(model=request.model)
+            chat, dropped = self._create_chat(request)
             chat.append(system(request.system_prompt))
             chat.append(user(request.user_prompt))
             response = chat.sample()
             latency_ms = int((time.monotonic() - started) * 1000)
-            return self._result_from_response(response, latency_ms)
+            result = self._result_from_response(response, latency_ms)
+            if dropped:
+                result.provider_metadata["generation_dropped"] = dropped
+            return result
         except Exception as exc:  # normalized, never propagated
             latency_ms = int((time.monotonic() - started) * 1000)
             category = classify_exception(exc)
@@ -126,6 +142,26 @@ class XAIProvider:
                 retryable=category in _RETRYABLE,
                 latency_ms=latency_ms,
             )
+
+    def _create_chat(self, request: ModelRequest):
+        """chat.create with the requested GenerationConfig. Params the
+        installed xai-sdk doesn't accept are dropped one at a time (with a
+        warning) and reported back - never silently ignored."""
+        kwargs = build_chat_kwargs(request)
+        dropped: list[str] = []
+        while True:
+            try:
+                return self._client.chat.create(**kwargs), dropped
+            except TypeError as exc:
+                offender = _unexpected_kwarg_name(exc, kwargs)
+                if offender is None or offender == "model":
+                    raise
+                logger.warning(
+                    "xai-sdk does not accept %s=%r; dropping",
+                    offender, kwargs[offender],
+                )
+                kwargs.pop(offender)
+                dropped.append(offender)
 
     @staticmethod
     def _result_from_response(response, latency_ms: int) -> ProviderResult:

@@ -156,12 +156,13 @@ REMEMBER: Store the result in your memory for future reference.""",
 Share your thoughts, suspicions, or defend yourself.
 
 ROUND-BASED SPEAKING:
-- Players speak one at a time in order.
-- You are speaker {your_position} this round.
-- Already spoken: {already_spoken}
-- Yet to speak: {yet_to_speak}
+- There are {total_cycles} discussion cycle(s) today; this is cycle {discussion_cycle}.
+- Players speak one at a time in a set order (the order reverses between cycles).
+- You are speaker {your_position} in this cycle.
+- Already spoken this cycle: {already_spoken}
+- Yet to speak this cycle: {yet_to_speak}
 - DO NOT accuse players of being "quiet" or "silent" if they haven't had their turn yet.
-  Only comment on silence from players who spoke in PREVIOUS rounds.
+  Only comment on silence from players who spoke in PREVIOUS cycles or rounds.
 
 You may speak publicly: {{"say": {{"public": "your message"}}}}
 No action is required. Set "action": null""",
@@ -231,12 +232,32 @@ def get_action_instruction(required_action: str, turn_context: dict = None) -> s
         template = template.format(
             your_position=turn_context["your_position"],
             already_spoken=already,
-            yet_to_speak=yet
+            yet_to_speak=yet,
+            discussion_cycle=turn_context.get("discussion_cycle", 1),
+            total_cycles=turn_context.get("total_cycles", 1),
         )
     elif turn_context and required_action == "runoff_vote":
         candidates_str = ", ".join(f"P{c}" for c in turn_context["runoff_candidates"])
         template = template.format(runoff_candidates=candidates_str)
     return template
+
+
+def get_limits_notice() -> str:
+    """Bandwidth limits, stated to the model so compliant models are
+    unaffected by truncation. Values live in werewolf/engine/limits.py
+    and are logged in every game config."""
+    from werewolf.engine.limits import (
+        MEMORY_MAX_CHARS,
+        PUBLIC_MESSAGE_MAX_CHARS,
+        WOLF_MESSAGE_MAX_CHARS,
+    )
+    return (
+        f"\nLIMITS: public messages over {PUBLIC_MESSAGE_MAX_CHARS} "
+        f"characters and wolf-chat messages over {WOLF_MESSAGE_MAX_CHARS} "
+        f"characters will be cut off mid-sentence. Memory over "
+        f"{MEMORY_MAX_CHARS} characters (as JSON) will be truncated next "
+        f"turn. Be concise."
+    )
 
 
 _PROMPT_VERSION_CACHE = None

@@ -4,6 +4,7 @@ import os
 import sys
 from pathlib import Path
 
+from werewolf.llm.provider import GenerationConfig
 from werewolf.llm.registry import (
     MODEL_REGISTRY,
     build_provider,
@@ -112,6 +113,17 @@ def main():
         help="Disable structured belief/suspicion snapshots (cheaper, but "
              "games cannot be analyzed for manipulation metrics)"
     )
+    parser.add_argument("--discussion-cycles", type=int, default=2,
+                        help="Discussion cycles per day (default: 2; "
+                             "order reverses between cycles)")
+    parser.add_argument("--temperature", type=float, default=None,
+                        help="Sampling temperature (default: provider default)")
+    parser.add_argument("--top-p", type=float, default=None,
+                        help="Nucleus sampling top_p (default: provider default)")
+    parser.add_argument("--max-output-tokens", type=int, default=None,
+                        help="Max output tokens per call (default: provider default)")
+    parser.add_argument("--provider-seed", type=int, default=None,
+                        help="Provider-side sampling seed, where supported")
 
     args = parser.parse_args()
 
@@ -171,6 +183,14 @@ def main():
         model_alias=model_alias,
         reasoning_effort=spec.reasoning_effort,
         belief_snapshots=not args.no_belief_snapshots,
+        generation_config=GenerationConfig(
+            temperature=args.temperature,
+            top_p=args.top_p,
+            max_output_tokens=args.max_output_tokens,
+            reasoning_effort=spec.reasoning_effort,
+            provider_seed=args.provider_seed,
+        ),
+        discussion_cycles=args.discussion_cycles,
     )
 
     winner = engine.run()

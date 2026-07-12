@@ -12,6 +12,7 @@ from werewolf.evaluation.belief_metrics import (
     compute_game_metrics_from_file,
 )
 from werewolf.llm.ledger import aggregate_game_summaries
+from werewolf.llm.provider import GenerationConfig
 from werewolf.llm.registry import build_provider, registry_snapshot, resolve
 
 
@@ -47,6 +48,8 @@ def run_one_trial(
     reasoning_effort: str = None,
     batch_id: str = None,
     belief_snapshots: bool = True,
+    generation_config=None,
+    discussion_cycles: int = 2,
 ) -> dict:
     engine = GameEngine(
         n_players=n_players,
@@ -65,6 +68,8 @@ def run_one_trial(
         batch_id=batch_id,
         trial_index=trial_index,
         belief_snapshots=belief_snapshots,
+        generation_config=generation_config,
+        discussion_cycles=discussion_cycles,
     )
     winner = engine.run()
     remaining = [p.id for p in engine.state.get_alive_players()]
@@ -236,6 +241,8 @@ def run_health_check(
     reasoning_effort: str = None,
     batch_id: str = None,
     belief_snapshots: bool = True,
+    generation_config=None,
+    discussion_cycles: int = 2,
 ) -> list[dict]:
     health_output_dir = os.path.join(output_dir, "healthcheck")
     records = []
@@ -255,6 +262,8 @@ def run_health_check(
             reasoning_effort=reasoning_effort,
             batch_id=batch_id,
             belief_snapshots=belief_snapshots,
+            generation_config=generation_config,
+            discussion_cycles=discussion_cycles,
         ))
     return records
 
@@ -301,6 +310,12 @@ def main():
         help="Disable structured belief/suspicion snapshots (cheaper, but "
              "games cannot be analyzed for manipulation metrics)",
     )
+    parser.add_argument("--discussion-cycles", type=int, default=2,
+                        help="Discussion cycles per day (default: 2)")
+    parser.add_argument("--temperature", type=float, default=None)
+    parser.add_argument("--top-p", type=float, default=None)
+    parser.add_argument("--max-output-tokens", type=int, default=None)
+    parser.add_argument("--provider-seed", type=int, default=None)
 
     args = parser.parse_args()
     load_env_file()
@@ -329,12 +344,21 @@ def main():
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     manifest_path = os.path.join(output_dir, f"trials_manifest_{run_id}.jsonl")
 
+    generation_config = GenerationConfig(
+        temperature=args.temperature,
+        top_p=args.top_p,
+        max_output_tokens=args.max_output_tokens,
+        reasoning_effort=spec.reasoning_effort,
+        provider_seed=args.provider_seed,
+    )
     trial_kwargs = dict(
         provider=provider,
         model_alias=spec.alias,
         reasoning_effort=spec.reasoning_effort,
         batch_id=run_id,
         belief_snapshots=not args.no_belief_snapshots,
+        generation_config=generation_config,
+        discussion_cycles=args.discussion_cycles,
     )
 
     health_records = None
@@ -430,6 +454,8 @@ def main():
             "model_alias": spec.alias,
             "reasoning_effort": spec.reasoning_effort,
             "provider": spec.provider,
+            "generation_config": generation_config.to_json_dict(),
+            "discussion_cycles": args.discussion_cycles,
             "quiet": args.quiet,
             "health_check": args.health_check,
         },
