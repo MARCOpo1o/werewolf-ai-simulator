@@ -22,19 +22,25 @@ class ModelSpec:
     reasoning_effort: Optional[str] = None  # xAI: none|low|medium|high
 
 
-# Mirrors the historical MODEL_PRESETS in cli/run_game.py. Updating these
-# slugs (e.g. to grok-4.3 after the May 15, 2026 retirement) is a separate,
-# deliberate commit because it affects research comparability.
+# NOTE (research comparability): before 2026-07 these aliases pointed at
+# grok-4-1-fast / grok-4-1-fast-reasoning, which xAI retired on
+# 2026-05-15 and silently redirects to grok-4.3. The aliases now target
+# grok-4.3 explicitly, matching xAI's own redirect mapping (none/low
+# reasoning effort), so requested_model == actual model again. Results
+# logged before this change were served by whatever the redirect chose;
+# compare eras via the resolved_model field, not the alias.
 MODEL_REGISTRY: dict[str, ModelSpec] = {
     "fast": ModelSpec(
         alias="fast",
         provider="xai",
-        model="grok-4-1-fast",
+        model="grok-4.3",
+        reasoning_effort="none",
     ),
     "reasoning": ModelSpec(
         alias="reasoning",
         provider="xai",
-        model="grok-4-1-fast-reasoning",
+        model="grok-4.3",
+        reasoning_effort="low",
     ),
 }
 

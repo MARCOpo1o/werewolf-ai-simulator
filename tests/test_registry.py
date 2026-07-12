@@ -13,11 +13,13 @@ from werewolf.llm.registry import (
 
 
 class ResolveTests(unittest.TestCase):
-    def test_aliases_match_legacy_presets(self):
-        # Must mirror MODEL_PRESETS in cli/run_game.py until the deliberate
-        # model-upgrade commit.
-        self.assertEqual(resolve("fast").model, "grok-4-1-fast")
-        self.assertEqual(resolve("reasoning").model, "grok-4-1-fast-reasoning")
+    def test_aliases_point_at_current_models(self):
+        # Deliberately updated 2026-07: grok-4-1-fast* retired 2026-05-15;
+        # aliases now target grok-4.3 with explicit reasoning effort.
+        self.assertEqual(resolve("fast").model, "grok-4.3")
+        self.assertEqual(resolve("fast").reasoning_effort, "none")
+        self.assertEqual(resolve("reasoning").model, "grok-4.3")
+        self.assertEqual(resolve("reasoning").reasoning_effort, "low")
         self.assertEqual(resolve("fast").provider, "xai")
 
     def test_full_model_id_passthrough(self):

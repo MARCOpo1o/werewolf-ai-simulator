@@ -94,7 +94,21 @@ class XAIProvider:
     def complete(self, request: ModelRequest) -> ProviderResult:
         started = time.monotonic()
         try:
-            chat = self._client.chat.create(model=request.model)
+            if request.reasoning_effort is not None:
+                try:
+                    chat = self._client.chat.create(
+                        model=request.model,
+                        reasoning_effort=request.reasoning_effort,
+                    )
+                except TypeError:
+                    # older xai-sdk without reasoning_effort support
+                    logger.warning(
+                        "xai-sdk ignored reasoning_effort=%s (unsupported)",
+                        request.reasoning_effort,
+                    )
+                    chat = self._client.chat.create(model=request.model)
+            else:
+                chat = self._client.chat.create(model=request.model)
             chat.append(system(request.system_prompt))
             chat.append(user(request.user_prompt))
             response = chat.sample()
