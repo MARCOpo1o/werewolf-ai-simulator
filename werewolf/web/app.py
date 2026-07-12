@@ -1,20 +1,16 @@
-import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, render_template
 
 from werewolf.engine.game import GameEngine
+from werewolf.llm.registry import build_provider, get_api_key, resolve
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 app = Flask(__name__)
 
 game_engine: GameEngine | None = None
-
-
-def get_api_key() -> str:
-    return os.environ.get("GROK_API_KEY") or os.environ.get("XAI_API_KEY", "")
 
 
 @app.route("/")
@@ -40,9 +36,13 @@ def new_game():
     seed = data.get("seed", 42)
     model = data.get("model", "grok-4.3")
 
-    api_key = get_api_key()
+    # Resolve aliases (fast/reasoning/gemini_flash_lite/...) and full model
+    # IDs to the right provider and key env vars.
+    spec = resolve(model)
+    api_key = get_api_key(spec)
     if not api_key:
-        return jsonify({"error": "Set GROK_API_KEY or XAI_API_KEY in .env"}), 400
+        env_names = " or ".join(spec.api_key_env) or "an API key"
+        return jsonify({"error": f"Set {env_names} in .env for model {model}"}), 400
     if n_seers not in (0, 1):
         return jsonify({"error": "n_seers must be 0 or 1"}), 400
     if n_wolves >= n_players:
@@ -56,12 +56,26 @@ def new_game():
         n_seers=n_seers,
         seed=seed,
         api_key=api_key,
-        model=model,
+        model=spec.model,
+        provider=build_provider(spec, api_key=api_key),
+        model_alias=spec.alias,
+        reasoning_effort=spec.reasoning_effort,
         show_all_channels=True,
         show_prompts=False
     )
 
     return jsonify({"game": game_engine.get_state_dict()})
+
+
+@app.route("/api/usage")
+def get_usage():
+    """Live usage/cost summary for the current game (see UsageLedger)."""
+    if game_engine is None:
+        return jsonify({"error": "No game in progress", "usage": None})
+    return jsonify({
+        "game_id": game_engine.state.game_id,
+        "usage": game_engine.ledger.game_summary(),
+    })
 
 
 @app.route("/api/advance", methods=["POST"])
