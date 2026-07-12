@@ -1,4 +1,5 @@
-xai-sdk
-flask>=2.0.0
-python-dotenv>=1.0.0
+# Exact pins for research reproducibility (see README).
+xai-sdk==1.17.0
+flask==3.1.3
+python-dotenv==1.2.2
 litellm==1.92.0

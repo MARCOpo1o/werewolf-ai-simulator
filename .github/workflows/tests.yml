@@ -1,0 +1,30 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # The suite must pass with no dependencies, no API keys, and no
+      # network: providers are optional imports, LLM calls are simulated
+      # by the fake provider.
+      - name: Run tests (no dependencies installed)
+        run: PYTHONPATH=. python -m unittest discover -s tests
+
+      # And again with pinned dependencies (enables litellm adapter tests).
+      - name: Install pinned dependencies
+        run: pip install -r requirements.txt
+      - name: Run tests (full dependencies)
+        run: PYTHONPATH=. python -m unittest discover -s tests
