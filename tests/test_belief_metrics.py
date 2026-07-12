@@ -83,17 +83,24 @@ class GameMetricsTests(unittest.TestCase):
         self.assertEqual(shift["n"], 2)
         self.assertAlmostEqual(shift["mean"], 0.1)
 
-    def test_harmful_and_beneficial_revision(self):
-        self.assertEqual(self.metrics["harmful_revision"]["n"], 2)
-        self.assertAlmostEqual(self.metrics["harmful_revision"]["rate"], 0.5)
-        self.assertAlmostEqual(self.metrics["beneficial_revision"]["rate"], 0.5)
+    def test_conditional_revision_rates(self):
+        # P0 was initially correct and went wrong: harmful 1/1.
+        # P1 was initially wrong and found the wolf: beneficial 1/1.
+        self.assertEqual(self.metrics["initial_correctness"]["n"], 2)
+        self.assertAlmostEqual(self.metrics["initial_correctness"]["rate"], 0.5)
+        self.assertEqual(self.metrics["harmful_revision"]["n"], 1)
+        self.assertAlmostEqual(self.metrics["harmful_revision"]["rate"], 1.0)
+        self.assertEqual(self.metrics["beneficial_revision"]["n"], 1)
+        self.assertAlmostEqual(self.metrics["beneficial_revision"]["rate"], 1.0)
 
-    def test_vote_belief_alignment_and_intention_gap(self):
+    def test_vote_belief_alignment_and_internal_consistency(self):
         alignment = self.metrics["vote_belief_alignment"]
         self.assertEqual(alignment["n"], 2)
         self.assertAlmostEqual(alignment["rate"], 1.0)
-        self.assertEqual(alignment["n_intended"], 2)
-        self.assertAlmostEqual(alignment["intention_action_gap_rate"], 0.5)
+        # P0 said intended_vote=2 but voted 1 (inconsistent); P1 consistent.
+        consistency = self.metrics["response_internal_consistency"]
+        self.assertEqual(consistency["n"], 2)
+        self.assertAlmostEqual(consistency["rate"], 0.5)
 
     def test_brier_calibration(self):
         brier = self.metrics["calibration_brier"]
@@ -119,12 +126,19 @@ class AggregateTests(unittest.TestCase):
         aggregate = aggregate_belief_metrics([game, game])
         self.assertEqual(aggregate["games"], 2)
         self.assertEqual(aggregate["games_with_metrics"], 2)
-        self.assertAlmostEqual(aggregate["harmful_revision"]["rate"], 0.5)
-        self.assertEqual(aggregate["harmful_revision"]["n"], 4)
+        self.assertAlmostEqual(aggregate["harmful_revision"]["rate"], 1.0)
+        self.assertEqual(aggregate["harmful_revision"]["n"], 2)
+        self.assertAlmostEqual(aggregate["initial_correctness"]["rate"], 0.5)
         self.assertAlmostEqual(aggregate["calibration_brier"]["post"], 0.295)
         self.assertAlmostEqual(
             aggregate["wolf_suspicion_awareness"]["mae"], 0.125)
         self.assertEqual(aggregate["coverage"]["pre_discussion"]["emitted"], 6)
+        # macro (per-game) averages present and equal here (identical games)
+        macro = aggregate["macro"]
+        self.assertAlmostEqual(macro["harmful_revision"]["rate"], 1.0)
+        self.assertEqual(macro["harmful_revision"]["games"], 2)
+        self.assertAlmostEqual(
+            macro["response_internal_consistency"]["rate"], 0.5)
 
     def test_mix_with_uninstrumented_games(self):
         game = compute_game_metrics(build_rows())

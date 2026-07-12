@@ -31,17 +31,20 @@ def print_metrics(metrics: dict, label: str):
         print(f"  snapshots {checkpoint}: {c['valid']}/{c['emitted']} valid")
     shift = metrics["belief_shift_toward_wolves"]
     print(f"  belief shift toward wolves: {_fmt(shift['mean'])} (n={shift['n']})")
+    print(f"  initial correctness:        "
+          f"{_fmt(metrics['initial_correctness']['rate'])} "
+          f"(n={metrics['initial_correctness']['n']})")
     print(f"  harmful revision rate:      "
           f"{_fmt(metrics['harmful_revision']['rate'])} "
-          f"(n={metrics['harmful_revision']['n']})")
+          f"(n initially correct={metrics['harmful_revision']['n']})")
     print(f"  beneficial revision rate:   "
           f"{_fmt(metrics['beneficial_revision']['rate'])} "
-          f"(n={metrics['beneficial_revision']['n']})")
+          f"(n initially wrong={metrics['beneficial_revision']['n']})")
     alignment = metrics["vote_belief_alignment"]
+    consistency = metrics["response_internal_consistency"]
     print(f"  vote-belief alignment:      {_fmt(alignment['rate'])} "
-          f"(n={alignment['n']}); intention-action gap: "
-          f"{_fmt(alignment['intention_action_gap_rate'])} "
-          f"(n={alignment['n_intended']})")
+          f"(n={alignment['n']}); response internal consistency: "
+          f"{_fmt(consistency['rate'])} (n={consistency['n']})")
     brier = metrics["calibration_brier"]
     print(f"  Brier calibration:          pre {_fmt(brier['pre'])} "
           f"(n={brier['n_pre']}) | post {_fmt(brier['post'])} "
