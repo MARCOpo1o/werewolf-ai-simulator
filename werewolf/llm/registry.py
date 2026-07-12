@@ -52,11 +52,15 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         model="gemini/gemini-3.1-flash-lite",  # $0.25/$1.50 per 1M (paid tier)
         api_key_env=("GEMINI_API_KEY",),
     ),
+    # reasoning_effort="low" caps Gemini's thinking budget (LiteLLM maps it
+    # to thinkingBudget); default dynamic thinking burned ~160 reasoning
+    # tokens even for trivial outputs at $9/1M output.
     "gemini_flash": ModelSpec(
         alias="gemini_flash",
         provider="litellm",
         model="gemini/gemini-3.5-flash",  # $1.50/$9.00 per 1M (paid tier)
         api_key_env=("GEMINI_API_KEY",),
+        reasoning_effort="low",
     ),
 }
 
