@@ -37,6 +37,7 @@ from werewolf.engine.beliefs import BELIEF_SCHEMA_VERSION
 from werewolf.engine.game import get_code_commit
 from werewolf.engine.limits import limits_dict
 from werewolf.evaluation.belief_metrics import METRICS_VERSION
+from werewolf.evaluation.stats import bootstrap_ci, paired_bootstrap_diff
 from werewolf.llm.provider import GenerationConfig
 from werewolf.llm.records import SCHEMA_VERSION
 from werewolf.llm.registry import registry_snapshot, resolve
@@ -131,6 +132,31 @@ def run_crossed_experiment(
             manifest_path=manifest_path,
         )
 
+    # Seed-level bootstrap statistics: CIs resample seeds (repetitions of
+    # a seed are collapsed first), and condition comparisons are paired on
+    # shared seeds.
+    def wolf_wins_by_seed(records: list) -> dict:
+        by_seed: dict = {}
+        for r in records:
+            by_seed.setdefault(r["seed"], []).append(
+                1.0 if r["winner"] == "wolf" else 0.0
+            )
+        return by_seed
+
+    wins = {c: wolf_wins_by_seed(r) for c, r in records_by_condition.items()}
+    statistics = {
+        "method": "percentile bootstrap over seeds; paired on shared seeds",
+        "wolf_win_rate": {c: bootstrap_ci(w) for c, w in wins.items()},
+        "paired_differences": {
+            "a_homogeneous_minus_b_homogeneous": paired_bootstrap_diff(
+                wins["a_homogeneous"], wins["b_homogeneous"]
+            ),
+            "a_wolves_minus_b_wolves_crossed": paired_bootstrap_diff(
+                wins["a_wolves_b_village"], wins["b_wolves_a_village"]
+            ),
+        },
+    }
+
     summary = {
         # full condition specification (benchmark reproducibility)
         "experiment_id": experiment_id,
@@ -161,6 +187,7 @@ def run_crossed_experiment(
         },
         "model_registry_snapshot": registry_snapshot(),
         "conditions": condition_summaries,
+        "statistics": statistics,
         "manifest_path": manifest_path,
     }
 

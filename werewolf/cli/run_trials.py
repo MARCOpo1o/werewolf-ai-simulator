@@ -11,6 +11,10 @@ from werewolf.evaluation.belief_metrics import (
     aggregate_belief_metrics,
     compute_game_metrics_from_file,
 )
+from werewolf.evaluation.validity import (
+    classify_game_from_file,
+    summarize_validity,
+)
 from werewolf.llm.ledger import aggregate_game_summaries
 from werewolf.llm.provider import GenerationConfig
 from werewolf.llm.registry import build_provider, registry_snapshot, resolve
@@ -135,6 +139,8 @@ def write_summary_csv(path: str, summary: dict):
         "llm_calls",
         "retries",
         "fallbacks",
+        "clean_games",
+        "clean_wolf_win_rate",
         "harmful_revision_rate",
         "beneficial_revision_rate",
         "vote_belief_alignment_rate",
@@ -173,6 +179,10 @@ def write_summary_csv(path: str, summary: dict):
             "llm_calls": usage.get("calls"),
             "retries": usage.get("retries"),
             "fallbacks": usage.get("fallbacks"),
+            "clean_games": (summary.get("clean_games") or {}).get("trials"),
+            "clean_wolf_win_rate": (
+                (summary.get("clean_games") or {}).get("wolf_win_rate")
+            ),
             "harmful_revision_rate": metric("harmful_revision", "rate"),
             "beneficial_revision_rate": metric("beneficial_revision", "rate"),
             "vote_belief_alignment_rate": metric("vote_belief_alignment", "rate"),
@@ -200,6 +210,26 @@ def build_batch_summary(
     rounds = [r["rounds"] for r in records]
     total = len(records)
 
+    # Validity gates: report all-games AND clean-games result sets; dirty
+    # games are counted with reasons, never silently discarded.
+    metrics_by_game: dict = {}
+    validity_by_game: dict = {}
+    for r in records:
+        if r.get("log_path"):
+            metrics_by_game[r["game_id"]] = compute_game_metrics_from_file(
+                r["log_path"]
+            )
+            validity_by_game[r["game_id"]] = classify_game_from_file(
+                r["log_path"]
+            )
+    clean_records = [
+        r for r in records
+        if validity_by_game.get(r["game_id"], {}).get("clean")
+    ]
+    clean_total = len(clean_records)
+    clean_wolf = sum(1 for r in clean_records if r["winner"] == "wolf")
+    clean_rounds = [r["rounds"] for r in clean_records]
+
     summary = {
         "run_id": run_id,
         "started_at": started_at,
@@ -214,10 +244,22 @@ def build_batch_summary(
         "usage": aggregate_game_summaries(
             [r["usage"] for r in records if r.get("usage")]
         ),
-        "belief_metrics": aggregate_belief_metrics([
-            compute_game_metrics_from_file(r["log_path"])
-            for r in records if r.get("log_path")
-        ]),
+        "belief_metrics": aggregate_belief_metrics(
+            list(metrics_by_game.values())
+        ),
+        "validity": summarize_validity(list(validity_by_game.values())),
+        "clean_games": {
+            "trials": clean_total,
+            "wolf_win_rate": (clean_wolf / clean_total) if clean_total else None,
+            "village_win_rate": (
+                (clean_total - clean_wolf) / clean_total if clean_total else None
+            ),
+            "avg_rounds": mean(clean_rounds) if clean_rounds else None,
+            "belief_metrics": aggregate_belief_metrics([
+                metrics_by_game[r["game_id"]] for r in clean_records
+                if r["game_id"] in metrics_by_game
+            ]),
+        },
         "config": config,
         "model_registry_snapshot": registry_snapshot(),
         "manifest_path": manifest_path,
