@@ -50,6 +50,8 @@ def run_one_trial(
     belief_snapshots: bool = True,
     generation_config=None,
     discussion_cycles: int = 2,
+    role_models: dict = None,
+    role_providers: dict = None,
 ) -> dict:
     engine = GameEngine(
         n_players=n_players,
@@ -70,6 +72,8 @@ def run_one_trial(
         belief_snapshots=belief_snapshots,
         generation_config=generation_config,
         discussion_cycles=discussion_cycles,
+        role_models=role_models,
+        role_providers=role_providers,
     )
     winner = engine.run()
     remaining = [p.id for p in engine.state.get_alive_players()]
@@ -90,6 +94,7 @@ def run_one_trial(
             "model": model,
             "model_alias": model_alias,
             "reasoning_effort": reasoning_effort,
+            "role_models": engine.role_models_resolved,
         },
     }
 

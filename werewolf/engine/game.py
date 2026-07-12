@@ -91,7 +91,15 @@ class GameEngine:
         belief_snapshots: bool = True,
         generation_config: GenerationConfig = None,
         discussion_cycles: int = 2,
+        role_models: dict = None,
+        role_providers: dict = None,
     ):
+        """role_models: optional {"werewolf": <alias-or-model-id>,
+        "villager": ..., "seer": ...} for heterogeneous games (separates
+        deception production from detection). Roles omitted fall back to
+        the villager entry; providers/keys are resolved per role via the
+        registry. role_providers injects pre-built providers per role
+        (tests / advanced callers) and takes precedence."""
         self.n_players = n_players
         self.n_wolves = n_wolves
         self.n_seers = n_seers
@@ -133,14 +141,20 @@ class GameEngine:
             "trial_index": trial_index,
             "prompt_version": get_prompt_version(),
         }
-        self.agents: dict[int, AIAgent] = create_agents(
-            self.players, api_key, model, show_prompts,
-            provider=provider,
-            ledger=self.ledger,
-            run_context=run_context,
-            model_alias=model_alias,
-            generation=self.generation_config,
-        )
+        self.role_models_resolved = None
+        if role_models:
+            self.agents, self.role_models_resolved = self._create_role_agents(
+                role_models, role_providers or {}, show_prompts, run_context,
+            )
+        else:
+            self.agents: dict[int, AIAgent] = create_agents(
+                self.players, api_key, model, show_prompts,
+                provider=provider,
+                ledger=self.ledger,
+                run_context=run_context,
+                model_alias=model_alias,
+                generation=self.generation_config,
+            )
         self.transcript = ConsoleTranscript(
             show_all=show_all_channels,
             enabled=transcript_enabled
@@ -164,6 +178,7 @@ class GameEngine:
             "belief_schema_version": BELIEF_SCHEMA_VERSION if belief_snapshots else None,
             "generation_config": self.generation_config.to_json_dict(),
             "discussion_cycles": self.discussion_cycles,
+            "role_models": self.role_models_resolved,
             "limits": limits_dict(),
             "code_commit": get_code_commit(),
             "game_id": self.state.game_id,
@@ -172,6 +187,67 @@ class GameEngine:
                 for pid, p in sorted(self.players.items())
             },
         })
+
+    def _create_role_agents(
+        self, role_models: dict, role_providers: dict,
+        show_prompts: bool, run_context: dict,
+    ) -> tuple[dict, dict]:
+        """Heterogeneous agents: each role gets its own model spec and
+        provider (keys resolved from that spec's env vars). Roles absent
+        from role_models inherit the villager entry."""
+        import dataclasses
+
+        from werewolf.llm.registry import build_provider, resolve
+
+        unknown = set(role_models) - {"werewolf", "villager", "seer"}
+        if unknown:
+            raise ValueError(f"Unknown roles in role_models: {sorted(unknown)}")
+        if "villager" not in role_models:
+            raise ValueError('role_models requires at least a "villager" entry')
+
+        specs, providers, resolved = {}, {}, {}
+        provider_cache: dict = {}
+        for role in ("werewolf", "villager", "seer"):
+            name = role_models.get(role) or role_models["villager"]
+            spec = resolve(name)
+            specs[role] = spec
+            if role in role_providers:
+                providers[role] = role_providers[role]
+            else:
+                cache_key = (spec.provider, spec.model, spec.api_key_env)
+                if cache_key not in provider_cache:
+                    provider_cache[cache_key] = build_provider(spec)
+                providers[role] = provider_cache[cache_key]
+            resolved[role] = {
+                "requested": name,
+                "model": spec.model,
+                "alias": spec.alias,
+                "provider": spec.provider,
+                "reasoning_effort": spec.reasoning_effort,
+            }
+
+        wolf_roster = [p.id for p in self.players.values()
+                       if p.role == "werewolf"]
+        agents = {}
+        for pid, player in self.players.items():
+            spec = specs[player.role]
+            agents[pid] = AIAgent(
+                player_id=pid,
+                role=player.role,
+                team=player.team,
+                provider=providers[player.role],
+                wolf_roster=wolf_roster if player.role == "werewolf" else None,
+                model=spec.model,
+                show_prompts=show_prompts,
+                ledger=self.ledger,
+                run_context=run_context,
+                model_alias=spec.alias,
+                generation=dataclasses.replace(
+                    self.generation_config,
+                    reasoning_effort=spec.reasoning_effort,
+                ),
+            )
+        return agents, resolved
 
     def run(self) -> str:
         self.transcript.print_role_reveal(self.players)
