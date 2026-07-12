@@ -38,7 +38,7 @@ def new_game():
     n_wolves = data.get("n_wolves", 2)
     n_seers = data.get("n_seers", 1)
     seed = data.get("seed", 42)
-    model = data.get("model", "grok-4-1-fast")
+    model = data.get("model", "grok-4.3")
 
     api_key = get_api_key()
     if not api_key:

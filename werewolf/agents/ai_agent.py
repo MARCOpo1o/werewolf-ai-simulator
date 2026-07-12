@@ -32,7 +32,7 @@ class AIAgent:
         team: str,
         provider: Optional[Provider] = None,
         wolf_roster: list[int] = None,
-        model: str = "grok-4-1-fast",
+        model: str = "grok-4.3",
         show_prompts: bool = False,
         ledger=None,
         run_context: Optional[dict] = None,
@@ -471,7 +471,7 @@ class AIAgent:
 def create_agents(
     players: dict,
     api_key: str = "",
-    model: str = "grok-4-1-fast",
+    model: str = "grok-4.3",
     show_prompts: bool = False,
     provider: Optional[Provider] = None,
     ledger=None,

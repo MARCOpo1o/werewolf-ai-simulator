@@ -44,7 +44,7 @@ class GameEngine:
         seed: int = 42,
         output_dir: str = "outputs/games",
         api_key: str = "",
-        model: str = "grok-4-1-fast",
+        model: str = "grok-4.3",
         show_all_channels: bool = True,
         show_prompts: bool = False,
         transcript_enabled: bool = True,
