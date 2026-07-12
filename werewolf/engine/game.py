@@ -16,6 +16,13 @@ from werewolf.engine.events import (
     create_phase_event,
     create_win_event,
     create_game_status_event,
+    create_belief_snapshot_event,
+)
+from werewolf.engine.beliefs import (
+    BELIEF_SCHEMA_VERSION,
+    CHECKPOINT_POST,
+    CHECKPOINT_PRE,
+    parse_belief_snapshot,
 )
 from werewolf.engine.visibility import build_observation, update_player_seen_index
 from werewolf.engine.validate import validate_action, get_fallback_action, _to_int
@@ -32,6 +39,7 @@ class GameEngine:
         "night_wolf_kill",
         "night_seer",
         "day_announce",
+        "day_assess",
         "day_discuss",
         "day_vote",
     ]
@@ -54,6 +62,7 @@ class GameEngine:
         reasoning_effort: str = None,
         batch_id: str = None,
         trial_index: int = None,
+        belief_snapshots: bool = True,
     ):
         self.n_players = n_players
         self.n_wolves = n_wolves
@@ -62,6 +71,7 @@ class GameEngine:
         self.output_dir = output_dir
         self.api_key = api_key
         self.model = model
+        self.belief_snapshots = belief_snapshots
 
         self.rng = random.Random(seed)
         self.players = assign_roles(n_players, n_wolves, self.rng, n_seers=n_seers)
@@ -116,6 +126,8 @@ class GameEngine:
             "prompt_version": run_context["prompt_version"],
             "batch_id": batch_id,
             "trial_index": trial_index,
+            "belief_snapshots": belief_snapshots,
+            "belief_schema_version": BELIEF_SCHEMA_VERSION if belief_snapshots else None,
             "game_id": self.state.game_id,
             "role_map": {
                 str(pid): {"role": p.role, "team": p.team}
@@ -182,6 +194,13 @@ class GameEngine:
                 winner = self.state.check_win_condition()
                 if winner:
                     self._end_game(winner)
+
+            elif phase_name == "day_assess":
+                if self.belief_snapshots and self.state.winner is None:
+                    self._set_phase("day_assess")
+                    self._collect_belief_snapshots(CHECKPOINT_PRE)
+                else:
+                    should_return_phase = False
 
             elif phase_name == "day_discuss":
                 self._set_phase("day_discuss")
@@ -251,6 +270,10 @@ class GameEngine:
         self._set_phase("day_announce")
         self.transcript.print_phase_header(self.state.round, self.state.phase)
         self._log_game_status()
+
+        if self.belief_snapshots:
+            self._set_phase("day_assess")
+            self._collect_belief_snapshots(CHECKPOINT_PRE)
 
         self._set_phase("day_discuss")
         self._day_discussion()
@@ -374,6 +397,35 @@ class GameEngine:
             update_player_seen_index(self.state, player.id)
             spoken.append(player.id)
 
+    def _collect_belief_snapshots(self, checkpoint: str):
+        """One private assess_beliefs call per alive player. Snapshots are
+        moderator-only and never enter other players' observations."""
+        for player in self.state.get_alive_players():
+            observation = build_observation(self.state, player.id, "assess_beliefs")
+            response = self._get_agent_action(player.id, observation)
+
+            if response.get("thought"):
+                event = create_thought_event(self.state, player.id, response["thought"])
+                self.logger.log_event(event)
+                self.transcript.print_event(event, self.players)
+
+            self._emit_belief_snapshot(player.id, response.get("beliefs"), checkpoint)
+            update_player_seen_index(self.state, player.id)
+
+    def _emit_belief_snapshot(self, player_id: int, raw_beliefs, checkpoint: str):
+        alive_ids = [p.id for p in self.state.get_alive_players()]
+        snapshot = parse_belief_snapshot(
+            raw_beliefs,
+            checkpoint,
+            self_id=player_id,
+            alive_ids=alive_ids,
+            is_wolf=self.players[player_id].role == "werewolf",
+        )
+        event = create_belief_snapshot_event(
+            self.state, player_id, snapshot.to_payload()
+        )
+        self.logger.log_event(event)
+
     def _day_vote(self) -> Optional[int]:
         alive_players = self.state.get_alive_players()
         votes = {}
@@ -386,6 +438,13 @@ class GameEngine:
                 event = create_thought_event(self.state, player.id, response["thought"])
                 self.logger.log_event(event)
                 self.transcript.print_event(event, self.players)
+
+            if self.belief_snapshots:
+                # Post-discussion snapshot rides inside the vote response;
+                # a malformed one never invalidates the vote itself.
+                self._emit_belief_snapshot(
+                    player.id, response.get("beliefs"), CHECKPOINT_POST
+                )
 
             action = response.get("action", {})
             target = self._coerce_player_id(action.get("vote_target"))

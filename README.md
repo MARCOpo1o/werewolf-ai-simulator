@@ -84,6 +84,18 @@ Every LLM call attempt — including malformed responses, invalid actions, retri
 
 Each game log ends with a `usage_summary` record: totals plus cost by player, role, phase, and action.
 
+## Belief snapshots & manipulation metrics
+
+Every game (unless run with `--no-belief-snapshots`) privately asks each player twice per day — once before discussion (`assess_beliefs` action) and once inside the vote response — for a structured assessment: per-player wolf probabilities, intended vote, vote confidence, most influential recent speaker, and (wolves only) second-order estimates of how suspicious each player is of them. Snapshots are logged as moderator-only `belief_snapshot` events (schema in `werewolf/engine/beliefs.py`); they are never shown to other players and never affect the game — a valid vote with malformed beliefs still counts, and missing snapshots are recorded as missing, never imputed.
+
+Six metrics are computed from the logs (`werewolf/evaluation/belief_metrics.py`): belief shift toward wolves, harmful revision rate, beneficial revision rate (always reported together), vote-belief alignment plus intention-action gap, Brier calibration per checkpoint, and wolf suspicion-awareness error (numerical theory-of-mind). Batch summaries include the aggregates automatically; re-analyze any logs with:
+
+```bash
+python -m werewolf.cli.analyze --manifest outputs/games/trials_manifest_<run_id>.jsonl
+```
+
+Known limitation: eliciting probabilities is itself an intervention and may influence play. Instrumentation is identical across all models and roles, so cross-model comparisons remain valid; `--no-belief-snapshots` preserves the uninstrumented baseline.
+
 ## Running tests
 
 The full suite runs free — no API key, no network (LLM calls are simulated by a fake provider):
@@ -113,7 +125,7 @@ Game logs are written to `outputs/games/` (JSONL per game, gitignored): regenera
 ## Next steps
 
 - Heterogeneous games (different models/prompts per player or role)
-- Deception metrics computed offline from game logs (lie rate, suspicion accuracy, persuasion success)
+- Replayable checkpoints and counterfactual branches (inject different deceptive arguments into one exact state, measure causal belief shifts)
 - Pre-run cost estimation from historical game records
 
 ## Project structure

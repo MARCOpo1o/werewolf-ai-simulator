@@ -106,6 +106,12 @@ def main():
         action="store_true",
         help="Suppress transcript output for faster batch-style runs"
     )
+    parser.add_argument(
+        "--no-belief-snapshots",
+        action="store_true",
+        help="Disable structured belief/suspicion snapshots (cheaper, but "
+             "games cannot be analyzed for manipulation metrics)"
+    )
 
     args = parser.parse_args()
 
@@ -164,6 +170,7 @@ def main():
         provider=build_provider(spec, api_key=api_key),
         model_alias=model_alias,
         reasoning_effort=spec.reasoning_effort,
+        belief_snapshots=not args.no_belief_snapshots,
     )
 
     winner = engine.run()

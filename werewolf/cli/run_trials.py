@@ -7,6 +7,10 @@ from statistics import mean
 
 from werewolf.cli.run_game import MODEL_PRESETS, get_api_key, load_env_file, setup_logging
 from werewolf.engine.game import GameEngine
+from werewolf.evaluation.belief_metrics import (
+    aggregate_belief_metrics,
+    compute_game_metrics_from_file,
+)
 from werewolf.llm.ledger import aggregate_game_summaries
 from werewolf.llm.registry import build_provider, registry_snapshot, resolve
 
@@ -42,6 +46,7 @@ def run_one_trial(
     model_alias: str = None,
     reasoning_effort: str = None,
     batch_id: str = None,
+    belief_snapshots: bool = True,
 ) -> dict:
     engine = GameEngine(
         n_players=n_players,
@@ -59,6 +64,7 @@ def run_one_trial(
         reasoning_effort=reasoning_effort,
         batch_id=batch_id,
         trial_index=trial_index,
+        belief_snapshots=belief_snapshots,
     )
     winner = engine.run()
     remaining = [p.id for p in engine.state.get_alive_players()]
@@ -119,9 +125,18 @@ def write_summary_csv(path: str, summary: dict):
         "llm_calls",
         "retries",
         "fallbacks",
+        "harmful_revision_rate",
+        "beneficial_revision_rate",
+        "vote_belief_alignment_rate",
+        "brier_post",
+        "wolf_awareness_mae",
         "started_at",
         "completed_at",
     ]
+    beliefs = summary.get("belief_metrics") or {}
+
+    def metric(key, field):
+        return (beliefs.get(key) or {}).get(field)
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
@@ -148,6 +163,11 @@ def write_summary_csv(path: str, summary: dict):
             "llm_calls": usage.get("calls"),
             "retries": usage.get("retries"),
             "fallbacks": usage.get("fallbacks"),
+            "harmful_revision_rate": metric("harmful_revision", "rate"),
+            "beneficial_revision_rate": metric("beneficial_revision", "rate"),
+            "vote_belief_alignment_rate": metric("vote_belief_alignment", "rate"),
+            "brier_post": (beliefs.get("calibration_brier") or {}).get("post"),
+            "wolf_awareness_mae": metric("wolf_suspicion_awareness", "mae"),
             "started_at": summary["started_at"],
             "completed_at": summary["completed_at"],
         })
@@ -184,6 +204,10 @@ def build_batch_summary(
         "usage": aggregate_game_summaries(
             [r["usage"] for r in records if r.get("usage")]
         ),
+        "belief_metrics": aggregate_belief_metrics([
+            compute_game_metrics_from_file(r["log_path"])
+            for r in records if r.get("log_path")
+        ]),
         "config": config,
         "model_registry_snapshot": registry_snapshot(),
         "manifest_path": manifest_path,
@@ -211,6 +235,7 @@ def run_health_check(
     model_alias: str = None,
     reasoning_effort: str = None,
     batch_id: str = None,
+    belief_snapshots: bool = True,
 ) -> list[dict]:
     health_output_dir = os.path.join(output_dir, "healthcheck")
     records = []
@@ -229,6 +254,7 @@ def run_health_check(
             model_alias=model_alias,
             reasoning_effort=reasoning_effort,
             batch_id=batch_id,
+            belief_snapshots=belief_snapshots,
         ))
     return records
 
@@ -269,6 +295,12 @@ def main():
         action="store_true",
         help="Continue remaining trials when a trial fails",
     )
+    parser.add_argument(
+        "--no-belief-snapshots",
+        action="store_true",
+        help="Disable structured belief/suspicion snapshots (cheaper, but "
+             "games cannot be analyzed for manipulation metrics)",
+    )
 
     args = parser.parse_args()
     load_env_file()
@@ -302,6 +334,7 @@ def main():
         model_alias=spec.alias,
         reasoning_effort=spec.reasoning_effort,
         batch_id=run_id,
+        belief_snapshots=not args.no_belief_snapshots,
     )
 
     health_records = None

@@ -66,6 +66,10 @@ def validate_action(
     if required_action == "speak_public":
         return True, None
 
+    if required_action == "assess_beliefs":
+        from werewolf.engine.beliefs import validate_assess_beliefs
+        return validate_assess_beliefs(observation, response)
+
     if required_action == "choose_wolf_kill":
         if not action or "kill_target" not in action:
             return False, "Missing kill_target in action"
@@ -148,6 +152,9 @@ def validate_say(
         if "public" in say:
             return False, "Cannot send public messages during wolf chat"
 
+    if required_action == "assess_beliefs":
+        return False, 'No messages during the private assessment. Set "say": null'
+
     return True, None
 
 
@@ -158,6 +165,16 @@ def get_fallback_action(observation: dict, rng) -> dict:
 
     if required_action == "wolf_chat":
         return {"thought": "[fallback] No comment", "say": None, "action": None}
+
+    if required_action == "assess_beliefs":
+        # Never fabricate random probabilities: a missing snapshot must be
+        # visibly missing, or it would poison every belief metric.
+        return {
+            "thought": "[fallback] No assessment available",
+            "say": None,
+            "action": None,
+            "beliefs": None,
+        }
 
     if required_action == "speak_public":
         return {"thought": "[fallback] Staying quiet", "say": {"public": "..."}, "action": None}

@@ -191,3 +191,19 @@ def create_game_status_event(
         channel="public",
         payload={"alive_wolves": alive_wolves, "alive_villagers": alive_villagers}
     )
+
+
+def create_belief_snapshot_event(
+    game_state,
+    player_id: int,
+    payload: dict
+) -> dict:
+    """Moderator-only structured belief snapshot (never visible to players;
+    see werewolf/engine/beliefs.py for the payload schema)."""
+    return create_event(
+        game_state,
+        event_type="belief_snapshot",
+        channel="moderator_only",
+        payload=payload,
+        speaker_id=player_id
+    )

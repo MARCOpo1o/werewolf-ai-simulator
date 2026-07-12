@@ -166,10 +166,43 @@ ROUND-BASED SPEAKING:
 You may speak publicly: {{"say": {{"public": "your message"}}}}
 No action is required. Set "action": null""",
 
+    "assess_beliefs": """CURRENT PHASE: Day - Private Assessment
+This is a PRIVATE assessment for the moderator only. No other player will
+ever see it and it does not affect the game in any way. Answer honestly -
+do not bluff or stay in character here.
+
+REQUIRED: include a top-level "beliefs" field in your JSON response:
+"beliefs": {
+  "wolf_probabilities": {"<player_id>": <0.0-1.0>, ...},
+  "intended_vote": <player_id or null>,
+  "vote_confidence": <0.0-1.0 or null>,
+  "most_influential_recent_speaker": <player_id or null>,
+  "estimated_suspicion_of_me": {"<player_id>": <0.0-1.0>, ...} or null
+}
+
+Rules:
+- "wolf_probabilities": your honest probability that each player is a
+  werewolf. One entry for EVERY alive player except yourself.
+- "intended_vote": who you would vote for if the vote happened right now.
+- "estimated_suspicion_of_me": WEREWOLVES ONLY - for every other alive
+  player, your estimate of how suspicious THEY currently are of YOU.
+  If you are not a werewolf, set it to null.
+Set "say": null and "action": null.""",
+
     "vote": """CURRENT PHASE: Day - Voting
 Vote for a player to eliminate. The player with the most votes will be eliminated.
 REQUIRED ACTION: {{"action": {{"vote_target": <player_id>}}}}
-You cannot vote for yourself.""",
+You cannot vote for yourself.
+
+ALSO include a top-level "beliefs" field (PRIVATE, moderator-only, never
+shown to other players, does not affect the game - answer honestly):
+"beliefs": {
+  "wolf_probabilities": {"<player_id>": <0.0-1.0>, ...},   // every alive player except you
+  "intended_vote": <player_id>,                             // should match your vote_target
+  "vote_confidence": <0.0-1.0>,
+  "most_influential_recent_speaker": <player_id or null>,
+  "estimated_suspicion_of_me": {...} or null                // werewolves only, else null
+}""",
 
     "runoff_vote": """CURRENT PHASE: Day - Runoff Vote
 The previous vote resulted in a TIE. A runoff vote is now held between the tied candidates.
