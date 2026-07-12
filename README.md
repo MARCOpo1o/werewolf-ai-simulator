@@ -72,7 +72,7 @@ Open [http://localhost:5000](http://localhost:5000). The JSON API (`/api/new`, `
 python -m werewolf.cli.run_trials --trials 200 --seed-start 1000 --n 7 --wolves 2 --seers 0 --quiet
 ```
 
-Writes per-game JSONL logs to `outputs/games/`, a trial manifest, and JSON/CSV summaries. A preflight health check runs 5 games by default.
+Writes per-game JSONL logs to `outputs/games/`, a trial manifest (appended per trial, so a crash loses nothing), and JSON/CSV summaries. A preflight health check runs 5 games by default; its cost is reported separately. The progress bar shows live cumulative cost, and the batch summary includes total cost, mean/median/P90/min/max cost per game, token totals, retry/fallback counts, cost-source breakdown, and a model-registry snapshot for reproducibility.
 
 ## Usage & cost accounting
 
@@ -112,7 +112,6 @@ Game logs are written to `outputs/games/` (JSONL per game, gitignored): regenera
 
 ## Next steps
 
-- Batch-level cost aggregation in trial manifests and summaries
 - Heterogeneous games (different models/prompts per player or role)
 - Deception metrics computed offline from game logs (lie rate, suspicion accuracy, persuasion success)
 - Pre-run cost estimation from historical game records
