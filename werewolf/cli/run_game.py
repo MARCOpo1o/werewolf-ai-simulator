@@ -4,7 +4,12 @@ import os
 import sys
 from pathlib import Path
 
-from werewolf.llm.registry import MODEL_REGISTRY, get_api_key as _registry_key, resolve
+from werewolf.llm.registry import (
+    MODEL_REGISTRY,
+    build_provider,
+    get_api_key as _registry_key,
+    resolve,
+)
 
 # Backward-compatible alias map, derived from the registry (single source
 # of truth in werewolf/llm/registry.py).
@@ -154,7 +159,9 @@ def main():
         show_all_channels=not args.hide_thoughts,
         show_prompts=args.show_prompts and args.debug,
         transcript_enabled=not args.quiet,
-        provider=None,
+        # Build the provider from the resolved spec so aliases route to
+        # the right provider (gemini_* -> LiteLLM, fast/reasoning -> xAI).
+        provider=build_provider(spec, api_key=api_key),
         model_alias=model_alias,
         reasoning_effort=spec.reasoning_effort,
     )

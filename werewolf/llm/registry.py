@@ -43,22 +43,48 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         reasoning_effort="low",
     ),
     # Google does not return billed cost in API responses, so records from
-    # this model carry cost_source=pricing_table_estimate (LiteLLM price
-    # map), never provider_reported.
+    # these models carry cost_source=pricing_table_estimate (LiteLLM price
+    # map), never provider_reported. On the free tier the actual bill is
+    # $0 while the estimate reflects paid-tier rates.
     "gemini_flash_lite": ModelSpec(
         alias="gemini_flash_lite",
         provider="litellm",
-        model="gemini/gemini-3.1-flash-lite-preview",
+        model="gemini/gemini-3.1-flash-lite",  # $0.25/$1.50 per 1M (paid tier)
+        api_key_env=("GEMINI_API_KEY",),
+    ),
+    "gemini_flash": ModelSpec(
+        alias="gemini_flash",
+        provider="litellm",
+        model="gemini/gemini-3.5-flash",  # $1.50/$9.00 per 1M (paid tier)
         api_key_env=("GEMINI_API_KEY",),
     ),
 }
 
 
+# LiteLLM-style provider prefixes -> key env var. A bare model name with
+# no prefix is treated as xAI (historical CLI behavior).
+_PREFIX_KEY_ENV = {
+    "gemini": ("GEMINI_API_KEY",),
+    "openai": ("OPENAI_API_KEY",),
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "openrouter": ("OPENROUTER_API_KEY",),
+}
+
+
 def resolve(name: str) -> ModelSpec:
-    """Resolve an alias, or pass a full model ID through as an xAI spec
-    (preserves the current CLI behavior of accepting full model names)."""
+    """Resolve an alias; pass full model IDs through. Prefixed IDs
+    (e.g. 'gemini/<model>') route to the LiteLLM provider; bare IDs
+    (e.g. 'grok-4.5') keep the historical direct-xAI behavior."""
     if name in MODEL_REGISTRY:
         return MODEL_REGISTRY[name]
+    if "/" in name:
+        prefix = name.split("/", 1)[0]
+        return ModelSpec(
+            alias=None,
+            provider="litellm",
+            model=name,
+            api_key_env=_PREFIX_KEY_ENV.get(prefix, ()),
+        )
     return ModelSpec(alias=None, provider="xai", model=name)
 
 

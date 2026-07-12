@@ -28,6 +28,34 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual(spec.model, "grok-4.3")
         self.assertEqual(spec.provider, "xai")
 
+    def test_gemini_aliases_route_to_litellm(self):
+        # Regression: a gemini alias/slug must never reach the xAI provider
+        # (live run sent gemini/... to xAI -> 'Model not found' fallbacks).
+        for name in ("gemini_flash_lite", "gemini_flash",
+                     "gemini/gemini-3.5-flash"):
+            spec = resolve(name)
+            self.assertEqual(spec.provider, "litellm", name)
+            self.assertEqual(spec.api_key_env, ("GEMINI_API_KEY",), name)
+
+    def test_prefixed_ids_route_to_litellm(self):
+        self.assertEqual(resolve("anthropic/claude-x").provider, "litellm")
+        self.assertEqual(
+            resolve("anthropic/claude-x").api_key_env, ("ANTHROPIC_API_KEY",)
+        )
+        # bare IDs keep historical xAI behavior
+        self.assertEqual(resolve("grok-4.5").provider, "xai")
+
+    def test_build_provider_dispatches_by_spec(self):
+        try:
+            import litellm  # noqa: F401
+        except ImportError:
+            self.skipTest("litellm not installed")
+        from werewolf.llm.litellm_provider import LiteLLMProvider
+        from werewolf.llm.registry import build_provider
+        provider = build_provider(resolve("gemini_flash"), api_key="test-key")
+        self.assertIsInstance(provider, LiteLLMProvider)
+        self.assertIsNone(build_provider(resolve("gemini_flash"), api_key=""))
+
     def test_registry_specs_are_frozen(self):
         with self.assertRaises(Exception):
             MODEL_REGISTRY["fast"].model = "other"
