@@ -1,23 +1,24 @@
-# Werewolf Multi-Agent Simulator
+# Werewolf AI Simulator — an LLM Deception Benchmark
 
-A multi-agent Werewolf (Mafia) game where all players are AI agents. The goal is to **observe how AI agents manipulate each other** and **how well they can lie** to other agents—who to trust, when to bluff, and how persuasion and deception play out when every player is an LLM.
+A multi-agent Werewolf (Mafia) game where all players are LLM agents. The research goal is to **measure how AI agents deceive, manipulate, and resist manipulation**: who to trust, when to bluff, and how persuasion plays out when every player is an LLM.
 
-Powered by the Grok API; run locally with a simple web UI or (later) at scale for experiments.
+Supports multiple model providers with **per-call cost accounting**: xAI Grok models via the native SDK (exact provider-reported billing), and Gemini/OpenAI/Anthropic/OpenRouter models via LiteLLM (clearly-labeled cost estimates).
 
 ## Requirements
 
 - Python 3.10+
-- Grok API key (from x.ai)
+- An API key for at least one provider (xAI or Google Gemini)
 
 ## Setup
 
-1. Create a `.env` file in the project root with your API key (e.g. copy `.env.example` to `.env` and fill it in):
+1. Create a `.env` file in the project root (copy `.env.example`) with the keys for the models you'll use:
 
 ```bash
-GROK_API_KEY=your_api_key_here
+GROK_API_KEY=...      # or XAI_API_KEY, for grok models
+GEMINI_API_KEY=...    # for gemini models
 ```
 
-The app also accepts `XAI_API_KEY`. The `.env` file is gitignored so the key is never committed.
+`.env` is gitignored so keys are never committed.
 
 2. Install dependencies:
 
@@ -25,36 +26,45 @@ The app also accepts `XAI_API_KEY`. The `.env` file is gitignored so the key is 
 pip install -r requirements.txt
 ```
 
-## Running tests
-
-From the project root:
+3. Verify a model works end to end (makes exactly one tiny API request):
 
 ```bash
-PYTHONPATH=. python3 -m unittest tests.test_validate_action tests.test_roles_and_ids -v
+python3 scripts/smoke_test_model.py gemini_flash_lite
 ```
 
-Integration tests (`test_integration_trials.py`) require `GROK_API_KEY` or `XAI_API_KEY` in `.env` and will run real games.
+## Models
+
+Model aliases live in `werewolf/llm/registry.py`:
+
+| Alias | Model | Provider | Notes |
+|---|---|---|---|
+| `fast` | grok-4.3, reasoning effort `none` | xAI (exact billing) | default |
+| `reasoning` | grok-4.3, reasoning effort `low` | xAI (exact billing) | |
+| `gemini_flash_lite` | gemini-3.1-flash-lite | LiteLLM (estimate) | cheapest, ~$0.01/game |
+| `gemini_flash` | gemini-3.5-flash, thinking capped `low` | LiteLLM (estimate) | |
+
+Full model IDs also work: bare IDs (`--model grok-4.5`) go to xAI; prefixed IDs (`--model gemini/<model>`) go through LiteLLM.
+
+## Running the game (CLI)
+
+```bash
+python -m werewolf --n 7 --wolves 2 --seers 1 --seed 42 --model gemini_flash_lite
+```
+
+Useful flags: `--seers 0`, `--quiet`, `--model <alias-or-id>`. Every game ends with a cost report:
+
+```
+LLM calls: 23 (retries: 1, fallbacks: 0)
+Cost: $0.011240 [sources: pricing_table_estimate]
+```
 
 ## Running the game (Web UI)
-
-From the project root:
 
 ```bash
 python -m werewolf.web.app
 ```
 
-Then open [http://localhost:5000](http://localhost:5000) in your browser. Use the UI to start a new game (choose players, wolves, seed), then advance through night and day phases step by step.
-
-## Running the game (CLI)
-
-```bash
-python -m werewolf --n 7 --wolves 2 --seers 1 --seed 42
-```
-
-Useful flags:
-- `--seers 0` disables the seer role.
-- `--quiet` suppresses transcript output for faster runs.
-- `--model fast|reasoning|<full-model-name>`
+Open [http://localhost:5000](http://localhost:5000). The JSON API (`/api/new`, `/api/advance`, `/api/state`, `/api/usage`) accepts any model alias and exposes the live usage/cost summary, so games can also be driven programmatically.
 
 ## Running batch trials (CLI)
 
@@ -62,18 +72,27 @@ Useful flags:
 python -m werewolf.cli.run_trials --trials 200 --seed-start 1000 --n 7 --wolves 2 --seers 0 --quiet
 ```
 
-This command writes:
-- Per-game JSONL logs in `outputs/games/`
-- Trial manifest: `trials_manifest_<run_id>.jsonl`
-- Aggregate summaries: `trials_summary_<run_id>.json` and `.csv`
+Writes per-game JSONL logs to `outputs/games/`, a trial manifest, and JSON/CSV summaries. A preflight health check runs 5 games by default.
 
-By default, a preflight health check runs 5 games before the batch.
+## Usage & cost accounting
 
-### Screenshots
+Every LLM call attempt — including malformed responses, invalid actions, retries, and provider failures — produces an `llm_call` record in the per-game JSONL log (schema in `werewolf/llm/records.py`), with:
 
-| Game setup | In-game (phase / transcript) |
-|------------|------------------------------|
-| ![Setup](screenshots/setup.png) | ![Game](screenshots/gameplay.png) |
+- token counts (input / cached / output / reasoning)
+- cost with an explicit source: `provider_reported` (exact, xAI ticks), `pricing_table_estimate` (LiteLLM price map), or `unavailable` — estimates are never presented as exact, and unavailable cost is never silently treated as zero
+- requested vs. resolved model (providers can silently redirect retired slugs), prompt version hash, error category, parse method, latency
+
+Each game log ends with a `usage_summary` record: totals plus cost by player, role, phase, and action.
+
+## Running tests
+
+The full suite runs free — no API key, no network (LLM calls are simulated by a fake provider):
+
+```bash
+PYTHONPATH=. python3 -m unittest discover -s tests -v
+```
+
+Live paid tests are opt-in only via `scripts/smoke_test_model.py`.
 
 ## Game rules (summary)
 
@@ -81,14 +100,22 @@ By default, a preflight health check runs 5 games before the batch.
 - **Phases**: Night (wolf chat → wolf kill → seer divine), Day (announce victim → discussion → vote).
 - **Win**: Village wins when all wolves are eliminated; wolves win when they outnumber or equal villagers.
 
+### Screenshots
+
+| Game setup | In-game (phase / transcript) |
+|------------|------------------------------|
+| ![Setup](screenshots/setup.png) | ![Game](screenshots/gameplay.png) |
+
 ## Outputs and repo hygiene
 
-- Game logs are written to `outputs/games/` (JSONL per game).
-- The repo already ignores `outputs/` in `.gitignore`. Keeping it ignored is recommended: logs are regeneratable, can be large, and are often environment-specific when running at scale.
+Game logs are written to `outputs/games/` (JSONL per game, gitignored): regeneratable, potentially large, environment-specific.
 
 ## Next steps
 
-Planned follow-up: **run many games at scale** (batch or headless) and **analyze results**—e.g. how often wolves win, how persuasion and lying correlate with outcomes, and how different setups affect manipulation. The web UI is for single-game inspection and debugging before scaling.
+- Batch-level cost aggregation in trial manifests and summaries
+- Heterogeneous games (different models/prompts per player or role)
+- Deception metrics computed offline from game logs (lie rate, suspicion accuracy, persuasion success)
+- Pre-run cost estimation from historical game records
 
 ## Project structure
 
@@ -96,16 +123,27 @@ Planned follow-up: **run many games at scale** (batch or headless) and **analyze
 werewolf/
   __main__.py           # CLI entry (python -m werewolf)
   web/
-    app.py              # Web UI server (python -m werewolf.web.app)
+    app.py              # Web UI server + JSON API (incl. /api/usage)
   cli/
+    run_game.py         # Single-game CLI
     run_trials.py       # Batch trial runner + aggregate summaries
   engine/
     game.py             # Game loop
     state.py            # GameState, PlayerState
     visibility.py       # Observation building
+    logging.py          # Per-game JSONL logs (events, llm_call, usage_summary)
   agents/
-    ai_agent.py         # Grok API + memory
-    prompts.py          # Role prompts
+    ai_agent.py         # Prompting, parsing, retries (provider-agnostic)
+    prompts.py          # Role prompts (content-hashed for reproducibility)
+  llm/
+    registry.py         # Model aliases -> provider, model ID, key env vars
+    provider.py         # Provider protocol (typed request/result)
+    xai_provider.py     # Direct xAI adapter (exact cost_in_usd_ticks)
+    litellm_provider.py # Gemini/OpenAI/Anthropic/... adapter (estimates)
+    records.py          # UsageRecord schema (one per call attempt)
+    ledger.py           # Thread-safe ledger + per-game aggregation
+scripts/
+  smoke_test_model.py   # One-request live check for any model alias
 outputs/
   games/                # JSONL logs (gitignored)
 ```
