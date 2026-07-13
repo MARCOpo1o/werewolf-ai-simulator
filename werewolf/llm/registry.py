@@ -62,6 +62,26 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         api_key_env=("GEMINI_API_KEY",),
         reasoning_effort="low",
     ),
+    # Anthropic (date-pinned where the API offers it, for reproducibility)
+    "claude_haiku": ModelSpec(
+        alias="claude_haiku",
+        provider="litellm",
+        model="anthropic/claude-haiku-4-5-20251001",  # $1.00/$5.00 per 1M
+        api_key_env=("ANTHROPIC_API_KEY",),
+    ),
+    "claude_sonnet": ModelSpec(
+        alias="claude_sonnet",
+        provider="litellm",
+        model="anthropic/claude-sonnet-5",  # $2.00/$10.00 per 1M
+        api_key_env=("ANTHROPIC_API_KEY",),
+    ),
+    # OpenAI
+    "gpt_mini": ModelSpec(
+        alias="gpt_mini",
+        provider="litellm",
+        model="openai/gpt-4o-mini",  # $0.15/$0.60 per 1M
+        api_key_env=("OPENAI_API_KEY",),
+    ),
 }
 
 

@@ -37,6 +37,20 @@ class ResolveTests(unittest.TestCase):
             self.assertEqual(spec.provider, "litellm", name)
             self.assertEqual(spec.api_key_env, ("GEMINI_API_KEY",), name)
 
+    def test_claude_and_openai_aliases_route_to_litellm(self):
+        cases = {
+            "claude_haiku": ("anthropic/claude-haiku-4-5-20251001",
+                             ("ANTHROPIC_API_KEY",)),
+            "claude_sonnet": ("anthropic/claude-sonnet-5",
+                              ("ANTHROPIC_API_KEY",)),
+            "gpt_mini": ("openai/gpt-4o-mini", ("OPENAI_API_KEY",)),
+        }
+        for alias, (model, key_env) in cases.items():
+            spec = resolve(alias)
+            self.assertEqual(spec.provider, "litellm", alias)
+            self.assertEqual(spec.model, model, alias)
+            self.assertEqual(spec.api_key_env, key_env, alias)
+
     def test_prefixed_ids_route_to_litellm(self):
         self.assertEqual(resolve("anthropic/claude-x").provider, "litellm")
         self.assertEqual(

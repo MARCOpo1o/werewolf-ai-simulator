@@ -117,6 +117,15 @@ class LiteLLMProvider:
             raise ValueError("LiteLLMProvider requires a non-empty API key")
         self._api_key = api_key  # passed per-call; never logged or recorded
         self._timeout = timeout
+        # Silence LiteLLM's per-call WARNING spam (e.g. Gemini 3+ deprecation
+        # of temperature/top_p). Deliberate choice: we KEEP sending pinned
+        # sampling params while they still function - benchmark comparability
+        # requires identical generation settings across providers, and the
+        # suggested alternative (sampling guidance in the system prompt)
+        # would contaminate prompts. If a provider hard-removes a param, the
+        # call errors and our normalized error mapping surfaces it loudly.
+        logging.getLogger("LiteLLM").setLevel(logging.ERROR)
+        litellm.suppress_debug_info = True
 
     def complete(self, request: ModelRequest) -> ProviderResult:
         started = time.monotonic()
