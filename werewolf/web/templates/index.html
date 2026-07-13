@@ -10,6 +10,7 @@
     <header>
         <h1>WEREWOLF</h1>
         <div id="status-bar">
+            <span id="model-info">Model: -</span>
             <span id="round-info">Round: -</span>
             <span id="phase-info">Phase: Setup</span>
             <span id="team-counts">Wolves: - | Villagers: -</span>
@@ -42,28 +43,78 @@
     </footer>
 
     <div id="new-game-modal" class="modal hidden">
-        <div class="modal-content">
-            <h2>New Game</h2>
+        <div class="modal-content setup-modal">
+            <div class="setup-heading">
+                <div>
+                    <h2>New Game</h2>
+                    <p>Choose a curated model configuration.</p>
+                </div>
+                <button type="button" class="icon-button" onclick="hideNewGameModal()" aria-label="Close">×</button>
+            </div>
             <form id="new-game-form">
-                <label>
-                    Players:
-                    <input type="number" id="input-players" value="7" min="4" max="15">
-                </label>
-                <label>
-                    Wolves:
-                    <input type="number" id="input-wolves" value="2" min="1" max="5">
-                </label>
-                <label>
-                    Seers:
-                    <input type="number" id="input-seers" value="1" min="0" max="1">
-                </label>
-                <label>
-                    Seed:
-                    <input type="number" id="input-seed" value="42">
-                </label>
+                <div class="setup-section">
+                    <div class="section-label">Game type</div>
+                    <div class="segmented-control" role="radiogroup" aria-label="Game type">
+                        <label><input type="radio" name="game-type" value="quick" checked><span>Quick</span></label>
+                        <label><input type="radio" name="game-type" value="matchup"><span>Model Matchup</span></label>
+                    </div>
+                </div>
+
+                <div id="quick-model-section" class="setup-section">
+                    <label class="field-label" for="quick-model">Model for every player</label>
+                    <select id="quick-model" class="model-select"></select>
+                    <div id="quick-model-detail" class="model-detail"></div>
+                </div>
+
+                <div id="matchup-model-section" class="setup-section hidden">
+                    <div class="matchup-grid">
+                        <label>Werewolves<select id="wolf-model" class="model-select"></select></label>
+                        <label>Villagers<select id="villager-model" class="model-select"></select></label>
+                        <label>Seer<select id="seer-model" class="model-select"></select></label>
+                    </div>
+                    <p id="seer-inactive-note" class="field-note hidden">No Seer is active; its metadata will inherit the Villager model.</p>
+                    <div id="matchup-model-detail" class="model-detail"></div>
+                </div>
+
+                <div class="setup-section game-fields">
+                    <label>Players<input type="number" id="input-players" value="7" min="4" max="15"></label>
+                    <label>Wolves<input type="number" id="input-wolves" value="2" min="1" max="5"></label>
+                    <label>Seers<input type="number" id="input-seers" value="1" min="0" max="1"></label>
+                    <label>Seed<input type="number" id="input-seed" value="42"></label>
+                </div>
+
+                <details id="custom-settings" class="custom-settings">
+                    <summary>Custom settings <span>Generation and instrumentation</span></summary>
+                    <div class="custom-grid">
+                        <label>Temperature<input type="number" id="input-temperature" min="0" max="2" step="0.1" placeholder="Provider default"></label>
+                        <label>Top P<input type="number" id="input-top-p" min="0" max="1" step="0.05" placeholder="Provider default"></label>
+                        <label>Max output tokens<input type="number" id="input-max-tokens" min="1" max="65536" placeholder="Provider default"></label>
+                        <label>Provider seed<input type="number" id="input-provider-seed" placeholder="Provider default"></label>
+                        <label>Reasoning override
+                            <select id="input-reasoning">
+                                <option value="">Model default</option>
+                                <option value="none">None</option>
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                            </select>
+                        </label>
+                        <label>Discussion cycles<input type="number" id="input-cycles" value="2" min="1" max="5"></label>
+                    </div>
+                    <div class="toggle-row">
+                        <label><input type="checkbox" id="input-structured"> Request structured JSON mode</label>
+                        <label><input type="checkbox" id="input-snapshots" checked> Collect belief snapshots</label>
+                    </div>
+                </details>
+
+                <div class="health-row">
+                    <button type="button" id="health-check-btn">Check selected models</button>
+                    <div id="health-status" aria-live="polite"></div>
+                </div>
+                <div id="setup-errors" class="setup-errors hidden" aria-live="assertive"></div>
                 <div class="modal-buttons">
                     <button type="button" onclick="hideNewGameModal()">Cancel</button>
-                    <button type="submit">Start</button>
+                    <button type="submit" class="primary-button">Start game</button>
                 </div>
             </form>
         </div>

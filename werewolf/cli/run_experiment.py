@@ -72,6 +72,7 @@ def run_crossed_experiment(
     generation_config: GenerationConfig = None,
     discussion_cycles: int = 2,
     belief_snapshots: bool = True,
+    allow_provider_fallback: bool = False,
     progress=print,
 ) -> dict:
     os.makedirs(output_dir, exist_ok=True)
@@ -104,6 +105,7 @@ def run_crossed_experiment(
                         generation_config=generation_config,
                         discussion_cycles=discussion_cycles,
                         role_models=role_models,
+                        allow_provider_fallback=allow_provider_fallback,
                     )
                     record["condition_id"] = condition_id
                     record["repetition"] = repetition

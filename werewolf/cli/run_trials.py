@@ -56,6 +56,7 @@ def run_one_trial(
     discussion_cycles: int = 2,
     role_models: dict = None,
     role_providers: dict = None,
+    allow_provider_fallback: bool = False,
 ) -> dict:
     engine = GameEngine(
         n_players=n_players,
@@ -78,6 +79,7 @@ def run_one_trial(
         discussion_cycles=discussion_cycles,
         role_models=role_models,
         role_providers=role_providers,
+        allow_provider_fallback=allow_provider_fallback,
     )
     winner = engine.run()
     remaining = [p.id for p in engine.state.get_alive_players()]
@@ -375,7 +377,13 @@ def main():
     if not api_key:
         env_names = " or ".join(spec.api_key_env) or "an API key"
         raise SystemExit(f"Error: {env_names} environment variable is not set.")
-    provider = build_provider(spec, api_key=api_key)
+    provider_result = build_provider(spec, api_key=api_key)
+    if not provider_result.ok:
+        raise SystemExit(
+            f"Error: provider unavailable ({provider_result.status.value}): "
+            f"{provider_result.error or 'unknown initialization error'}"
+        )
+    provider = provider_result.provider
 
     validate_config(args.n, args.wolves, args.seers)
     if args.trials < 1 and not args.health_check_only:
@@ -395,7 +403,6 @@ def main():
         temperature=args.temperature,
         top_p=args.top_p,
         max_output_tokens=args.max_output_tokens,
-        reasoning_effort=spec.reasoning_effort,
         provider_seed=args.provider_seed,
     )
     trial_kwargs = dict(

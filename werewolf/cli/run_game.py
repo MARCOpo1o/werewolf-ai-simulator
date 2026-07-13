@@ -166,6 +166,13 @@ def main():
         print(f"Output: {args.output_dir}")
         print()
 
+    provider_result = build_provider(spec, api_key=api_key)
+    if not provider_result.ok:
+        raise SystemExit(
+            f"Error: provider unavailable ({provider_result.status.value}): "
+            f"{provider_result.error or 'unknown initialization error'}"
+        )
+
     engine = GameEngine(
         n_players=args.n,
         n_wolves=args.wolves,
@@ -179,7 +186,7 @@ def main():
         transcript_enabled=not args.quiet,
         # Build the provider from the resolved spec so aliases route to
         # the right provider (gemini_* -> LiteLLM, fast/reasoning -> xAI).
-        provider=build_provider(spec, api_key=api_key),
+        provider=provider_result.provider,
         model_alias=model_alias,
         reasoning_effort=spec.reasoning_effort,
         belief_snapshots=not args.no_belief_snapshots,
@@ -187,7 +194,6 @@ def main():
             temperature=args.temperature,
             top_p=args.top_p,
             max_output_tokens=args.max_output_tokens,
-            reasoning_effort=spec.reasoning_effort,
             provider_seed=args.provider_seed,
         ),
         discussion_cycles=args.discussion_cycles,

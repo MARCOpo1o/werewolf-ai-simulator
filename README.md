@@ -38,10 +38,14 @@ Model aliases live in `werewolf/llm/registry.py`:
 
 | Alias | Model | Provider | Notes |
 |---|---|---|---|
-| `fast` | grok-4.3, reasoning effort `none` | xAI (exact billing) | default |
+| `fast` | grok-4.3, provider-default reasoning | xAI (exact billing) | default |
 | `reasoning` | grok-4.3, reasoning effort `low` | xAI (exact billing) | |
 | `gemini_flash_lite` | gemini-3.1-flash-lite | LiteLLM (estimate) | cheapest, ~$0.01/game |
 | `gemini_flash` | gemini-3.5-flash, thinking capped `low` | LiteLLM (estimate) | |
+| `claude_haiku` | claude-haiku-4-5-20251001 | LiteLLM (estimate) | date-pinned |
+| `claude_sonnet` | claude-sonnet-5 | LiteLLM (estimate) | |
+| `gpt_nano` | gpt-5.4-nano-2026-03-17 | LiteLLM (estimate) | date-pinned |
+| `gpt_luna` | gpt-5.6-luna, reasoning effort `low` | LiteLLM (estimate) | experimental |
 
 Full model IDs also work: bare IDs (`--model grok-4.5`) go to xAI; prefixed IDs (`--model gemini/<model>`) go through LiteLLM.
 
@@ -64,7 +68,9 @@ Cost: $0.011240 [sources: pricing_table_estimate]
 python -m werewolf.web.app
 ```
 
-Open [http://localhost:5000](http://localhost:5000). The JSON API (`/api/new`, `/api/advance`, `/api/state`, `/api/usage`) accepts any model alias and exposes the live usage/cost summary, so games can also be driven programmatically.
+Open [http://localhost:5000](http://localhost:5000). The setup supports a Quick homogeneous game or a Model Matchup with independent Werewolf, Villager, and Seer models. Custom settings expose generation controls, discussion cycles, and belief instrumentation. Optional health checks make exactly one provider request and report model identity, JSON validity, detected parameter adjustments, usage, and cost before a game starts.
+
+The JSON API exposes `/api/models`, `/api/models/<alias>/health-check`, `/api/new`, `/api/advance`, `/api/state`, and `/api/usage`. Web game creation accepts curated aliases only; CLI tools continue to support full provider model IDs.
 
 ## Running batch trials (CLI)
 
@@ -124,7 +130,8 @@ Game logs are written to `outputs/games/` (JSONL per game, gitignored): regenera
 
 ## Next steps
 
-- Heterogeneous games (different models/prompts per player or role)
+- Persisted single-game forensic reports and game history
+- Aggregate experiment dashboard for crossed model matchups
 - Replayable checkpoints and counterfactual branches (inject different deceptive arguments into one exact state, measure causal belief shifts)
 - Pre-run cost estimation from historical game records
 

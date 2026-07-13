@@ -127,9 +127,13 @@ class GenerationConfigTests(unittest.TestCase):
             temperature=0.0, top_p=1.0, max_output_tokens=1024,
             reasoning_effort="low", provider_seed=7,
         )
+        expected = GenerationConfig(
+            temperature=0.0, top_p=1.0, max_output_tokens=1024,
+            reasoning_effort=None, provider_seed=7,
+        )
         _, provider, rows = run_game(generation_config=config)
         for request in provider.requests:
-            self.assertEqual(request.generation, config)
+            self.assertEqual(request.generation, expected)
         llm_calls = [r for r in rows if r["type"] == "llm_call"
                      and r["api_attempted"]]
         for call in llm_calls:

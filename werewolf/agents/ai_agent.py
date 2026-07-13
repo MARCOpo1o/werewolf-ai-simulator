@@ -517,7 +517,7 @@ def create_agents(
     the historical no-key test behavior)."""
     if provider is None and api_key:
         from werewolf.llm.registry import build_provider, resolve
-        provider = build_provider(resolve(model), api_key=api_key)
+        provider = build_provider(resolve(model), api_key=api_key).provider
 
     wolf_roster = [p.id for p in players.values() if p.role == "werewolf"]
 

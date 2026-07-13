@@ -32,11 +32,11 @@ def main():
         print(f"FAIL: none of {spec.api_key_env} set in environment/.env")
         sys.exit(1)
 
-    provider = build_provider(spec)
-    if provider is None:
-        print("FAIL: provider could not be built (SDK missing? "
-              "run: pip install -r requirements.txt)")
+    provider_result = build_provider(spec)
+    if not provider_result.ok:
+        print(f"FAIL: {provider_result.status.value}: {provider_result.error}")
         sys.exit(1)
+    provider = provider_result.provider
 
     print("calling model (1 tiny request)...")
     result = provider.complete(ModelRequest(

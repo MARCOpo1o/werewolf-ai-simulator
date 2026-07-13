@@ -90,9 +90,11 @@ class GameEngine:
         trial_index: int = None,
         belief_snapshots: bool = True,
         generation_config: GenerationConfig = None,
+        reasoning_override: str = None,
         discussion_cycles: int = 2,
         role_models: dict = None,
         role_providers: dict = None,
+        allow_provider_fallback: bool = False,
     ):
         """role_models: optional {"werewolf": <alias-or-model-id>,
         "villager": ..., "seer": ...} for heterogeneous games (separates
@@ -107,10 +109,19 @@ class GameEngine:
         self.output_dir = output_dir
         self.api_key = api_key
         self.model = model
+        if role_models:
+            unknown = set(role_models) - {"werewolf", "villager", "seer"}
+            if unknown:
+                raise ValueError(f"Unknown roles in role_models: {sorted(unknown)}")
+            if "villager" not in role_models:
+                raise ValueError('role_models requires at least a "villager" entry')
         self.belief_snapshots = belief_snapshots
-        self.generation_config = generation_config or GenerationConfig(
-            reasoning_effort=reasoning_effort
-        )
+        from werewolf.llm.registry import effective_generation_config, resolve
+
+        self.requested_generation_config = generation_config or GenerationConfig()
+        self.reasoning_override = reasoning_override
+        self.allow_provider_fallback = allow_provider_fallback
+        self._closed = False
         if discussion_cycles < 1:
             raise ValueError("discussion_cycles must be >= 1")
         self.discussion_cycles = discussion_cycles
@@ -142,19 +153,40 @@ class GameEngine:
             "prompt_version": get_prompt_version(),
         }
         self.role_models_resolved = None
-        if role_models:
-            self.agents, self.role_models_resolved = self._create_role_agents(
-                role_models, role_providers or {}, show_prompts, run_context,
-            )
-        else:
-            self.agents: dict[int, AIAgent] = create_agents(
-                self.players, api_key, model, show_prompts,
-                provider=provider,
-                ledger=self.ledger,
-                run_context=run_context,
-                model_alias=model_alias,
-                generation=self.generation_config,
-            )
+        try:
+            if role_models:
+                self.agents, self.role_models_resolved = self._create_role_agents(
+                    role_models, role_providers or {}, show_prompts, run_context,
+                )
+            else:
+                spec = resolve(model_alias or model)
+                self.generation_config = effective_generation_config(
+                    self.requested_generation_config, spec, reasoning_override,
+                )
+                self.agents: dict[int, AIAgent] = create_agents(
+                    self.players, api_key, model, show_prompts,
+                    provider=provider,
+                    ledger=self.ledger,
+                    run_context=run_context,
+                    model_alias=model_alias,
+                    generation=self.generation_config,
+                )
+                assignment = {
+                    "alias": spec.alias,
+                    "requested_model": spec.model,
+                    "provider": spec.provider,
+                    "registry_reasoning_default": spec.reasoning_effort,
+                    "requested_reasoning_override": reasoning_override,
+                    "effective_generation": self.generation_config.to_json_dict(),
+                }
+                self.role_models_resolved = {
+                    role: {**assignment, "active": role != "seer" or n_seers > 0}
+                    for role in ("werewolf", "villager", "seer")
+                }
+        except Exception:
+            self.logger.close()
+            self._closed = True
+            raise
         self.transcript = ConsoleTranscript(
             show_all=show_all_channels,
             enabled=transcript_enabled
@@ -177,6 +209,8 @@ class GameEngine:
             "belief_snapshots": belief_snapshots,
             "belief_schema_version": BELIEF_SCHEMA_VERSION if belief_snapshots else None,
             "generation_config": self.generation_config.to_json_dict(),
+            "requested_generation_config": self.requested_generation_config.to_json_dict(),
+            "requested_reasoning_override": reasoning_override,
             "discussion_cycles": self.discussion_cycles,
             "role_models": self.role_models_resolved,
             "limits": limits_dict(),
@@ -195,15 +229,11 @@ class GameEngine:
         """Heterogeneous agents: each role gets its own model spec and
         provider (keys resolved from that spec's env vars). Roles absent
         from role_models inherit the villager entry."""
-        import dataclasses
-
-        from werewolf.llm.registry import build_provider, resolve
-
-        unknown = set(role_models) - {"werewolf", "villager", "seer"}
-        if unknown:
-            raise ValueError(f"Unknown roles in role_models: {sorted(unknown)}")
-        if "villager" not in role_models:
-            raise ValueError('role_models requires at least a "villager" entry')
+        from werewolf.llm.registry import (
+            build_provider,
+            effective_generation_config,
+            resolve,
+        )
 
         specs, providers, resolved = {}, {}, {}
         provider_cache: dict = {}
@@ -216,14 +246,28 @@ class GameEngine:
             else:
                 cache_key = (spec.provider, spec.model, spec.api_key_env)
                 if cache_key not in provider_cache:
-                    provider_cache[cache_key] = build_provider(spec)
+                    build = build_provider(spec)
+                    if not build.ok and not self.allow_provider_fallback:
+                        raise RuntimeError(
+                            f"Provider for role {role} is unavailable "
+                            f"({build.status.value}): {build.error or 'no details'}"
+                        )
+                    provider_cache[cache_key] = build.provider
                 providers[role] = provider_cache[cache_key]
+            effective = effective_generation_config(
+                self.requested_generation_config, spec, self.reasoning_override,
+            )
             resolved[role] = {
                 "requested": name,
                 "model": spec.model,
                 "alias": spec.alias,
                 "provider": spec.provider,
-                "reasoning_effort": spec.reasoning_effort,
+                "reasoning_effort": effective.reasoning_effort,
+                "requested_model": spec.model,
+                "registry_reasoning_default": spec.reasoning_effort,
+                "requested_reasoning_override": self.reasoning_override,
+                "effective_generation": effective.to_json_dict(),
+                "active": role != "seer" or self.n_seers > 0,
             }
 
         wolf_roster = [p.id for p in self.players.values()
@@ -242,11 +286,14 @@ class GameEngine:
                 ledger=self.ledger,
                 run_context=run_context,
                 model_alias=spec.alias,
-                generation=dataclasses.replace(
-                    self.generation_config,
-                    reasoning_effort=spec.reasoning_effort,
+                generation=effective_generation_config(
+                    self.requested_generation_config,
+                    spec,
+                    self.reasoning_override,
                 ),
             )
+        # There is no single effective configuration in a heterogeneous game.
+        self.generation_config = self.requested_generation_config
         return agents, resolved
 
     def run(self) -> str:
@@ -268,7 +315,7 @@ class GameEngine:
                 self._end_game(winner)
                 break
 
-        self.logger.close()
+        self.close()
         return self.state.winner
 
     def run_next_phase(self) -> dict:
@@ -363,7 +410,25 @@ class GameEngine:
             "events": self.state.events,
             "alive_wolves": len(self.state.get_alive_wolves()),
             "alive_villagers": len(self.state.get_alive_villagers()),
+            "model_assignment": self.role_models_resolved,
+            "observed_resolved_models": self._observed_resolved_models(),
         }
+
+    def _observed_resolved_models(self) -> dict[str, list[str]]:
+        observed: dict[str, set[str]] = {
+            "werewolf": set(), "villager": set(), "seer": set(),
+        }
+        for record in self.ledger.records:
+            if record.resolved_model and record.context.player_role in observed:
+                observed[record.context.player_role].add(record.resolved_model)
+        return {role: sorted(models) for role, models in observed.items()}
+
+    def close(self) -> None:
+        """Release game resources. Safe to call more than once."""
+        if self._closed:
+            return
+        self.logger.close()
+        self._closed = True
 
     def _run_night(self):
         self._set_phase("night_wolf_chat")

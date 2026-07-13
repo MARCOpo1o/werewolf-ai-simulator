@@ -1,16 +1,23 @@
 from pathlib import Path
+import threading
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, render_template
 
 from werewolf.engine.game import GameEngine
-from werewolf.llm.registry import build_provider, get_api_key, resolve
+from werewolf.llm.registry import get_api_key, selectable_models
+from werewolf.web.services import (
+    RequestValidationError,
+    create_engine_from_payload,
+    health_check,
+)
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 app = Flask(__name__)
 
 game_engine: GameEngine | None = None
+_game_lock = threading.RLock()
 
 
 @app.route("/")
@@ -20,76 +27,93 @@ def index():
 
 @app.route("/api/state")
 def get_state():
-    if game_engine is None:
-        return jsonify({"error": "No game in progress", "game": None})
-    return jsonify({"game": game_engine.get_state_dict()})
+    with _game_lock:
+        if game_engine is None:
+            return jsonify({"error": "No game in progress", "game": None})
+        return jsonify({"game": game_engine.get_state_dict()})
+
+
+@app.route("/api/models")
+def get_models():
+    return jsonify({
+        "models": [
+            {
+                "alias": spec.alias,
+                "display_name": spec.display_name,
+                "family": spec.family,
+                "description": spec.description,
+                "provider": spec.provider,
+                "requested_model": spec.model,
+                "registry_reasoning_default": spec.reasoning_effort,
+                "speed_tier": spec.speed_tier,
+                "cost_tier": spec.cost_tier,
+                "tags": list(spec.tags),
+                "experimental": spec.experimental,
+                "key_configured": bool(get_api_key(spec)),
+            }
+            for spec in selectable_models()
+        ]
+    })
+
+
+@app.route("/api/models/<alias>/health-check", methods=["POST"])
+def check_model(alias: str):
+    body, status_code = health_check(alias, request.get_json(silent=True) or {})
+    return jsonify(body), status_code
 
 
 @app.route("/api/new", methods=["POST"])
 def new_game():
     global game_engine
+    data = request.get_json(silent=True) or {}
+    try:
+        new_engine = create_engine_from_payload(data)
+    except RequestValidationError as exc:
+        return jsonify({"error": "Invalid game configuration", "errors": exc.errors}), 400
+    except Exception:
+        app.logger.exception("Game construction failed")
+        return jsonify({
+            "error": "Game could not be created",
+            "errors": {"request": {
+                "code": "engine_initialization_failed",
+                "message": "The game engine could not be initialized.",
+            }},
+        }), 500
 
-    data = request.get_json() or {}
-    n_players = data.get("n_players", 7)
-    n_wolves = data.get("n_wolves", 2)
-    n_seers = data.get("n_seers", 1)
-    seed = data.get("seed", 42)
-    model = data.get("model", "grok-4.3")
-
-    # Resolve aliases (fast/reasoning/gemini_flash_lite/...) and full model
-    # IDs to the right provider and key env vars.
-    spec = resolve(model)
-    api_key = get_api_key(spec)
-    if not api_key:
-        env_names = " or ".join(spec.api_key_env) or "an API key"
-        return jsonify({"error": f"Set {env_names} in .env for model {model}"}), 400
-    if n_seers not in (0, 1):
-        return jsonify({"error": "n_seers must be 0 or 1"}), 400
-    if n_wolves >= n_players:
-        return jsonify({"error": "n_wolves must be less than n_players"}), 400
-    if n_wolves + n_seers >= n_players:
-        return jsonify({"error": "Need at least one villager"}), 400
-
-    game_engine = GameEngine(
-        n_players=n_players,
-        n_wolves=n_wolves,
-        n_seers=n_seers,
-        seed=seed,
-        api_key=api_key,
-        model=spec.model,
-        provider=build_provider(spec, api_key=api_key),
-        model_alias=spec.alias,
-        reasoning_effort=spec.reasoning_effort,
-        show_all_channels=True,
-        show_prompts=False
-    )
-
-    return jsonify({"game": game_engine.get_state_dict()})
+    with _game_lock:
+        old_engine = game_engine
+        game_engine = new_engine
+        state = new_engine.get_state_dict()
+        if old_engine is not None:
+            old_engine.close()
+    return jsonify({"game": state})
 
 
 @app.route("/api/usage")
 def get_usage():
     """Live usage/cost summary for the current game (see UsageLedger)."""
-    if game_engine is None:
-        return jsonify({"error": "No game in progress", "usage": None})
-    return jsonify({
-        "game_id": game_engine.state.game_id,
-        "usage": game_engine.ledger.game_summary(),
-    })
+    with _game_lock:
+        if game_engine is None:
+            return jsonify({"error": "No game in progress", "usage": None})
+        return jsonify({
+            "game_id": game_engine.state.game_id,
+            "usage": game_engine.ledger.game_summary(),
+        })
 
 
 @app.route("/api/advance", methods=["POST"])
 def advance_phase():
     global game_engine
 
-    if game_engine is None:
-        return jsonify({"error": "No game in progress"}), 400
+    with _game_lock:
+        if game_engine is None:
+            return jsonify({"error": "No game in progress"}), 400
 
-    result = game_engine.run_next_phase()
-    return jsonify({
-        "result": result,
-        "game": game_engine.get_state_dict()
-    })
+        result = game_engine.run_next_phase()
+        return jsonify({
+            "result": result,
+            "game": game_engine.get_state_dict()
+        })
 
 
 def main():

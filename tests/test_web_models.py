@@ -1,0 +1,267 @@
+import importlib
+import tempfile
+import unittest
+from unittest import mock
+
+from werewolf.engine.game import GameEngine
+from werewolf.llm.fake_provider import FakeProvider, success_result
+from werewolf.llm.provider import GenerationConfig, ProviderResult
+from werewolf.llm.records import ErrorCategory
+from werewolf.llm.registry import (
+    MODEL_REGISTRY,
+    ProviderBuildResult,
+    ProviderBuildStatus,
+    effective_generation_config,
+)
+from werewolf.web.services import (
+    RequestValidationError,
+    create_engine_from_payload,
+    health_check,
+    parse_game_request,
+    parse_generation_settings,
+)
+
+
+def ready_build(provider):
+    return ProviderBuildResult(
+        provider=provider,
+        status=ProviderBuildStatus.READY,
+        required_credentials=("TEST_KEY",),
+    )
+
+
+class GenerationResolutionTests(unittest.TestCase):
+    def test_override_then_registry_then_provider_default(self):
+        base = GenerationConfig(temperature=0.0)
+        reasoning = MODEL_REGISTRY["reasoning"]
+        fast = MODEL_REGISTRY["fast"]
+        self.assertEqual(
+            effective_generation_config(base, reasoning).reasoning_effort,
+            "low",
+        )
+        self.assertEqual(
+            effective_generation_config(base, reasoning, "high").reasoning_effort,
+            "high",
+        )
+        self.assertIsNone(
+            effective_generation_config(base, fast).reasoning_effort,
+        )
+
+    def test_web_rejects_duplicate_reasoning_input(self):
+        with self.assertRaises(RequestValidationError) as ctx:
+            parse_generation_settings({
+                "generation_config": {"reasoning_effort": "low"},
+                "reasoning_override": "high",
+            })
+        self.assertIn("generation_config.reasoning_effort", ctx.exception.errors)
+
+
+class GameRequestTests(unittest.TestCase):
+    def test_quick_request_and_defaults(self):
+        parsed = parse_game_request({"model": "fast"})
+        self.assertEqual(parsed.model, "fast")
+        self.assertIsNone(parsed.role_models)
+        self.assertEqual(parsed.discussion_cycles, 2)
+        self.assertTrue(parsed.belief_snapshots)
+
+    def test_matchup_requires_every_role(self):
+        with self.assertRaises(RequestValidationError) as ctx:
+            parse_game_request({
+                "role_models": {"werewolf": "fast", "villager": "reasoning"},
+            })
+        self.assertEqual(ctx.exception.errors["role_models"]["code"], "incomplete_roles")
+
+    def test_inactive_seer_inherits_villager(self):
+        parsed = parse_game_request({
+            "n_seers": 0,
+            "role_models": {
+                "werewolf": "reasoning",
+                "villager": "gemini_flash_lite",
+                "seer": "claude_sonnet",
+            },
+        })
+        self.assertEqual(parsed.role_models["seer"], "gemini_flash_lite")
+
+    def test_only_selectable_aliases_are_accepted(self):
+        with self.assertRaises(RequestValidationError):
+            parse_game_request({"model": "grok-4.3"})
+
+    def test_provider_errors_are_attributed_to_every_affected_role(self):
+        missing = ProviderBuildResult(
+            status=ProviderBuildStatus.MISSING_CREDENTIAL,
+            required_credentials=("GROK_API_KEY",),
+        )
+        with mock.patch("werewolf.web.services.build_provider", return_value=missing):
+            with self.assertRaises(RequestValidationError) as ctx:
+                create_engine_from_payload({
+                    "role_models": {
+                        "werewolf": "fast", "villager": "fast", "seer": "fast",
+                    },
+                })
+        self.assertEqual(set(ctx.exception.errors), {
+            "role_models.werewolf", "role_models.villager", "role_models.seer",
+        })
+        self.assertTrue(all(
+            error["code"] == "missing_key" for error in ctx.exception.errors.values()
+        ))
+
+    def test_valid_matchup_is_constructed_with_prebuilt_providers(self):
+        provider = FakeProvider()
+        engine = object()
+        with mock.patch("werewolf.web.services.build_provider", return_value=ready_build(provider)), \
+             mock.patch("werewolf.web.services.GameEngine", return_value=engine) as engine_class:
+            result = create_engine_from_payload({
+                "n_seers": 1,
+                "role_models": {
+                    "werewolf": "reasoning", "villager": "fast", "seer": "gpt_nano",
+                },
+                "reasoning_override": "high",
+            })
+        self.assertIs(result, engine)
+        kwargs = engine_class.call_args.kwargs
+        self.assertEqual(kwargs["reasoning_override"], "high")
+        self.assertEqual(set(kwargs["role_providers"]), {"werewolf", "villager", "seer"})
+
+
+class HealthCheckTests(unittest.TestCase):
+    def test_ready_check_is_exactly_one_direct_provider_call(self):
+        provider = FakeProvider(results=[success_result(
+            {"health": "ok"}, resolved_model="grok-4.3",
+        )])
+        with mock.patch("werewolf.web.services.build_provider", return_value=ready_build(provider)):
+            body, status = health_check("fast", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["status"], "ready")
+        self.assertEqual(provider.calls_made, 1)
+        self.assertTrue(body["checks"]["json_valid"])
+        self.assertTrue(body["checks"]["model_match"])
+
+    def test_adjusted_check_reports_detected_drop(self):
+        result = success_result({"health": "ok"}, resolved_model="grok-4.3")
+        result.provider_metadata["generation_dropped"] = ["top_p"]
+        provider = FakeProvider(results=[result])
+        with mock.patch("werewolf.web.services.build_provider", return_value=ready_build(provider)):
+            body, _ = health_check("fast", {
+                "generation_config": {"top_p": 0.9},
+            })
+        self.assertEqual(body["status"], "adjusted")
+        self.assertEqual(body["generation_dropped"], ["top_p"])
+
+    def test_model_mismatch_and_malformed_json_fail(self):
+        provider = FakeProvider(results=[success_result(
+            text="not-json", resolved_model="gpt-5.4-preview",
+        )])
+        with mock.patch("werewolf.web.services.build_provider", return_value=ready_build(provider)):
+            body, _ = health_check("gpt_nano", {})
+        self.assertEqual(body["status"], "failed")
+        self.assertFalse(body["checks"]["json_valid"])
+        self.assertFalse(body["checks"]["model_match"])
+
+    def test_missing_key_is_distinct_from_provider_unavailable(self):
+        missing = ProviderBuildResult(
+            status=ProviderBuildStatus.MISSING_CREDENTIAL,
+            required_credentials=("GROK_API_KEY",),
+        )
+        unavailable = ProviderBuildResult(
+            status=ProviderBuildStatus.DEPENDENCY_UNAVAILABLE,
+            error="SDK is not installed",
+        )
+        with mock.patch("werewolf.web.services.build_provider", return_value=missing):
+            missing_body, _ = health_check("fast", {})
+        with mock.patch("werewolf.web.services.build_provider", return_value=unavailable):
+            unavailable_body, _ = health_check("fast", {})
+        self.assertEqual(missing_body["status"], "missing_key")
+        self.assertEqual(unavailable_body["status"], "provider_unavailable")
+
+
+class EngineLifecycleTests(unittest.TestCase):
+    def test_close_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = GameEngine(
+                n_players=4, n_wolves=1, n_seers=0, seed=4,
+                output_dir=tmpdir, provider=FakeProvider(),
+                transcript_enabled=False, belief_snapshots=False,
+            )
+            engine.close()
+            engine.close()
+            self.assertTrue(engine.logger.file.closed)
+
+    def test_role_assignment_logs_per_role_effective_generation(self):
+        provider = FakeProvider(default=success_result({}))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = GameEngine(
+                n_players=4, n_wolves=1, n_seers=0, seed=4,
+                output_dir=tmpdir, transcript_enabled=False,
+                belief_snapshots=False,
+                role_models={
+                    "werewolf": "reasoning", "villager": "fast", "seer": "fast",
+                },
+                role_providers={role: provider for role in ("werewolf", "villager", "seer")},
+            )
+            state = engine.get_state_dict()
+            self.assertEqual(
+                state["model_assignment"]["werewolf"]["effective_generation"]["reasoning_effort"],
+                "low",
+            )
+            self.assertIsNone(
+                state["model_assignment"]["villager"]["effective_generation"]["reasoning_effort"],
+            )
+            self.assertFalse(state["model_assignment"]["seer"]["active"])
+            engine.close()
+
+
+class WebApiTests(unittest.TestCase):
+    def setUp(self):
+        with mock.patch("dotenv.load_dotenv"):
+            self.webapp = importlib.import_module("werewolf.web.app")
+        self.webapp.app.config.update(TESTING=True)
+        self.client = self.webapp.app.test_client()
+        self.webapp.game_engine = None
+
+    def tearDown(self):
+        if self.webapp.game_engine is not None:
+            self.webapp.game_engine.close()
+        self.webapp.game_engine = None
+
+    def test_catalog_is_ordered_and_secret_free(self):
+        response = self.client.get("/api/models")
+        self.assertEqual(response.status_code, 200)
+        models = response.get_json()["models"]
+        self.assertEqual(models[0]["alias"], "fast")
+        self.assertNotIn("api_key_env", models[0])
+        self.assertNotIn("key", " ".join(models[0].keys()).replace("key_configured", ""))
+
+    def test_setup_page_contains_quick_matchup_and_custom_controls(self):
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn("Model Matchup", html)
+        self.assertIn("Custom settings", html)
+        self.assertIn("health-check-btn", html)
+
+    def test_failed_creation_preserves_active_engine(self):
+        old_engine = mock.Mock()
+        self.webapp.game_engine = old_engine
+        with mock.patch.object(
+            self.webapp, "create_engine_from_payload",
+            side_effect=RequestValidationError({"model": {"code": "missing_key", "message": "missing"}}),
+        ):
+            response = self.client.post("/api/new", json={"model": "fast"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIs(self.webapp.game_engine, old_engine)
+        old_engine.close.assert_not_called()
+        self.webapp.game_engine = None
+
+    def test_successful_creation_swaps_then_closes_old_engine(self):
+        old_engine = mock.Mock()
+        new_engine = mock.Mock()
+        new_engine.get_state_dict.return_value = {"game_id": "new"}
+        self.webapp.game_engine = old_engine
+        with mock.patch.object(self.webapp, "create_engine_from_payload", return_value=new_engine):
+            response = self.client.post("/api/new", json={"model": "fast"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIs(self.webapp.game_engine, new_engine)
+        old_engine.close.assert_called_once_with()
+        self.webapp.game_engine = None
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -31,11 +31,14 @@ class JSONLLogger:
         })
 
     def _write(self, obj: dict):
+        if self.file.closed:
+            return
         self.file.write(json.dumps(obj) + "\n")
         self.file.flush()
 
     def close(self):
-        self.file.close()
+        if not self.file.closed:
+            self.file.close()
 
 
 class ConsoleTranscript:

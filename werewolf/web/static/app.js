@@ -6,6 +6,8 @@ let autoPlayActive = false;
 let autoPlayTimer = null;
 let prefetchedData = null;
 let prefetchPromise = null;
+let modelCatalog = [];
+const healthCache = new Map();
 
 const PLAYER_EMOJIS = ['👤', '🧑', '👩', '🧔', '👨', '👵', '🧓', '👱', '🧑‍🦰', '👩‍🦳', '🧑‍🦱', '👨‍🦲', '🧑‍🦲', '👴', '👧'];
 const AUTO_PLAY_DELAY_MS = 0;
@@ -20,16 +22,16 @@ async function fetchState() {
     return data;
 }
 
-async function newGame(nPlayers, nWolves, nSeers, seed) {
+async function newGame(payload) {
     const response = await fetch('/api/new', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ n_players: nPlayers, n_wolves: nWolves, n_seers: nSeers, seed })
+        body: JSON.stringify(payload)
     });
     const data = await response.json();
     if (data.error) {
-        alert('Error: ' + data.error);
-        return;
+        showSetupErrors(data.errors || { request: { message: data.error } });
+        return false;
     }
     gameState = data.game;
     phaseEvents = [];
@@ -44,6 +46,189 @@ async function newGame(nPlayers, nWolves, nSeers, seed) {
     btn.disabled = false;
     btn.textContent = 'Start Game';
     document.getElementById('autoplay-btn').disabled = false;
+    return true;
+}
+
+async function fetchModels() {
+    const response = await fetch('/api/models');
+    const data = await response.json();
+    modelCatalog = data.models || [];
+    populateModelSelectors();
+}
+
+function populateModelSelectors() {
+    const selectors = ['quick-model', 'wolf-model', 'villager-model', 'seer-model'];
+    const options = modelCatalog.map(model =>
+        `<option value="${model.alias}">${model.display_name}</option>`
+    ).join('');
+    selectors.forEach(id => {
+        const select = document.getElementById(id);
+        select.innerHTML = options;
+    });
+    const defaultAlias = modelCatalog.some(m => m.alias === 'fast') ? 'fast' : modelCatalog[0]?.alias;
+    document.getElementById('quick-model').value = defaultAlias || '';
+    document.getElementById('wolf-model').value = defaultAlias || '';
+    document.getElementById('villager-model').value = defaultAlias || '';
+    document.getElementById('seer-model').value = defaultAlias || '';
+    renderModelDetails();
+}
+
+function selectedGameType() {
+    return document.querySelector('input[name="game-type"]:checked')?.value || 'quick';
+}
+
+function selectedAliases() {
+    if (selectedGameType() === 'quick') {
+        return [document.getElementById('quick-model').value];
+    }
+    const aliases = [
+        document.getElementById('wolf-model').value,
+        document.getElementById('villager-model').value,
+    ];
+    if (parseInt(document.getElementById('input-seers').value, 10) > 0) {
+        aliases.push(document.getElementById('seer-model').value);
+    }
+    return [...new Set(aliases.filter(Boolean))];
+}
+
+function getModel(alias) {
+    return modelCatalog.find(model => model.alias === alias);
+}
+
+function modelSummary(model) {
+    if (!model) return '';
+    const ready = model.key_configured ? 'Key configured' : 'Missing API key';
+    const experimental = model.experimental ? '<span class="tag experimental">Experimental</span>' : '';
+    return `<div class="model-summary">
+        <div><strong>${model.display_name}</strong> · ${model.provider} · ${model.speed_tier} speed · ${model.cost_tier} cost</div>
+        <p>${model.description}</p>
+        <div class="tag-row"><span class="tag ${model.key_configured ? 'ready' : 'missing'}">${ready}</span>${experimental}</div>
+    </div>`;
+}
+
+function renderModelDetails() {
+    const quick = getModel(document.getElementById('quick-model').value);
+    document.getElementById('quick-model-detail').innerHTML = modelSummary(quick);
+    const assignments = [
+        ['Wolves', getModel(document.getElementById('wolf-model').value)],
+        ['Village', getModel(document.getElementById('villager-model').value)],
+        ['Seer', getModel(document.getElementById('seer-model').value)],
+    ];
+    document.getElementById('matchup-model-detail').innerHTML = assignments.map(
+        ([role, model]) => `<div class="matchup-summary"><span>${role}</span>${modelSummary(model)}</div>`
+    ).join('');
+}
+
+function updateSetupMode() {
+    const matchup = selectedGameType() === 'matchup';
+    document.getElementById('quick-model-section').classList.toggle('hidden', matchup);
+    document.getElementById('matchup-model-section').classList.toggle('hidden', !matchup);
+    renderModelDetails();
+    renderCachedHealth();
+}
+
+function updateSeerControl() {
+    const inactive = parseInt(document.getElementById('input-seers').value, 10) === 0;
+    const seerSelect = document.getElementById('seer-model');
+    seerSelect.disabled = inactive;
+    if (inactive) seerSelect.value = document.getElementById('villager-model').value;
+    document.getElementById('seer-inactive-note').classList.toggle('hidden', !inactive);
+    renderModelDetails();
+    renderCachedHealth();
+}
+
+function optionalNumber(id, integer = false) {
+    const raw = document.getElementById(id).value.trim();
+    if (raw === '') return null;
+    return integer ? parseInt(raw, 10) : parseFloat(raw);
+}
+
+function generationPayload() {
+    return {
+        temperature: optionalNumber('input-temperature'),
+        top_p: optionalNumber('input-top-p'),
+        max_output_tokens: optionalNumber('input-max-tokens', true),
+        provider_seed: optionalNumber('input-provider-seed', true),
+        structured_output: document.getElementById('input-structured').checked,
+    };
+}
+
+function customPayload() {
+    return {
+        generation_config: generationPayload(),
+        reasoning_override: document.getElementById('input-reasoning').value || null,
+    };
+}
+
+function canonicalize(value) {
+    if (Array.isArray(value)) return value.map(canonicalize);
+    if (value && typeof value === 'object') {
+        return Object.keys(value).sort().reduce((out, key) => {
+            out[key] = canonicalize(value[key]);
+            return out;
+        }, {});
+    }
+    return value;
+}
+
+async function healthFingerprint(alias) {
+    const canonical = JSON.stringify(canonicalize({ alias, ...customPayload() }));
+    const bytes = new TextEncoder().encode(canonical);
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function checkSelectedModels() {
+    const button = document.getElementById('health-check-btn');
+    button.disabled = true;
+    button.textContent = 'Checking…';
+    clearSetupErrors();
+    try {
+        for (const alias of selectedAliases()) {
+            const key = await healthFingerprint(alias);
+            if (!healthCache.has(key)) {
+                const response = await fetch(`/api/models/${encodeURIComponent(alias)}/health-check`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(customPayload()),
+                });
+                healthCache.set(key, await response.json());
+            }
+        }
+        await renderCachedHealth();
+    } catch (error) {
+        showSetupErrors({ health: { message: error.message } });
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Check selected models';
+    }
+}
+
+async function renderCachedHealth() {
+    const container = document.getElementById('health-status');
+    const entries = [];
+    for (const alias of selectedAliases()) {
+        const key = await healthFingerprint(alias);
+        const result = healthCache.get(key);
+        const model = getModel(alias);
+        const status = result?.status || 'not checked';
+        entries.push(`<span class="health-chip health-${status.replace(' ', '-')}">${model?.display_name || alias}: ${status}</span>`);
+    }
+    container.innerHTML = entries.join('');
+}
+
+function showSetupErrors(errors) {
+    const container = document.getElementById('setup-errors');
+    container.innerHTML = Object.entries(errors).map(([field, error]) =>
+        `<div><strong>${field}:</strong> ${error.message || error}</div>`
+    ).join('');
+    container.classList.remove('hidden');
+}
+
+function clearSetupErrors() {
+    const container = document.getElementById('setup-errors');
+    container.innerHTML = '';
+    container.classList.add('hidden');
 }
 
 function applyPhaseResult(data, fromAutoPlay = false) {
@@ -384,6 +569,13 @@ function renderGame() {
     document.getElementById('phase-info').textContent = `Phase: ${formatPhase(gameState.phase)}`;
     document.getElementById('team-counts').textContent =
         `Wolves: ${gameState.alive_wolves} | Villagers: ${gameState.alive_villagers}`;
+    const assignments = gameState.model_assignment || {};
+    const activeAliases = [...new Set(Object.values(assignments)
+        .filter(item => item.active !== false)
+        .map(item => item.alias || item.requested_model)
+        .filter(Boolean))];
+    document.getElementById('model-info').textContent = activeAliases.length
+        ? `Models: ${activeAliases.join(' vs ')}` : 'Model: -';
 
     renderPlayers();
     renderWinner();
@@ -535,7 +727,9 @@ function hideMemoryModal() {
 }
 
 function showNewGameModal() {
+    clearSetupErrors();
     document.getElementById('new-game-modal').classList.remove('hidden');
+    renderCachedHealth();
 }
 
 function hideNewGameModal() {
@@ -548,9 +742,38 @@ document.getElementById('new-game-form').addEventListener('submit', async (e) =>
     const nWolves = parseInt(document.getElementById('input-wolves').value);
     const nSeers = parseInt(document.getElementById('input-seers').value);
     const seed = parseInt(document.getElementById('input-seed').value);
-    hideNewGameModal();
-    await newGame(nPlayers, nWolves, nSeers, seed);
+    const payload = {
+        n_players: nPlayers,
+        n_wolves: nWolves,
+        n_seers: nSeers,
+        seed,
+        discussion_cycles: parseInt(document.getElementById('input-cycles').value, 10),
+        belief_snapshots: document.getElementById('input-snapshots').checked,
+        ...customPayload(),
+    };
+    if (selectedGameType() === 'quick') {
+        payload.model = document.getElementById('quick-model').value;
+    } else {
+        payload.role_models = {
+            werewolf: document.getElementById('wolf-model').value,
+            villager: document.getElementById('villager-model').value,
+            seer: document.getElementById('seer-model').value,
+        };
+    }
+    const started = await newGame(payload);
+    if (started) hideNewGameModal();
 });
+
+document.querySelectorAll('input[name="game-type"]').forEach(input =>
+    input.addEventListener('change', updateSetupMode));
+document.querySelectorAll('.model-select').forEach(select =>
+    select.addEventListener('change', () => {
+        if (select.id === 'villager-model') updateSeerControl();
+        else renderModelDetails();
+        renderCachedHealth();
+    }));
+document.getElementById('input-seers').addEventListener('change', updateSeerControl);
+document.getElementById('health-check-btn').addEventListener('click', checkSelectedModels);
 
 document.addEventListener('keydown', (e) => {
     if (e.code !== 'Space' && e.code !== 'Enter') return;
@@ -561,4 +784,4 @@ document.addEventListener('keydown', (e) => {
     advancePhase();
 });
 
-document.addEventListener('DOMContentLoaded', fetchState);
+document.addEventListener('DOMContentLoaded', () => Promise.all([fetchState(), fetchModels()]));

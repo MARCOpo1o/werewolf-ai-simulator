@@ -109,6 +109,7 @@ class CrossedExperimentTests(unittest.TestCase):
                 output_dir=tmpdir,
                 quiet=True,
                 belief_snapshots=False,
+                allow_provider_fallback=True,
                 progress=lambda *_: None,
             )
 

@@ -614,6 +614,237 @@ button:active {
     margin-top: 1rem;
 }
 
+.setup-modal {
+    width: min(820px, 94vw);
+    max-width: 820px;
+    max-height: 92vh;
+    padding: 1.25rem 1.5rem;
+}
+
+.setup-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.setup-heading h2 {
+    margin-bottom: 0.25rem;
+}
+
+.setup-heading p,
+.field-note {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.icon-button {
+    padding: 0.1rem 0.55rem;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 1.6rem;
+}
+
+.setup-section,
+.custom-settings {
+    padding: 0.85rem;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    background: rgba(0,0,0,0.12);
+}
+
+.section-label,
+.field-label {
+    display: block !important;
+    margin-bottom: 0.55rem;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.segmented-control {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.4rem;
+}
+
+.segmented-control label {
+    display: block;
+}
+
+.segmented-control input {
+    position: absolute;
+    opacity: 0;
+}
+
+.segmented-control span {
+    display: block;
+    padding: 0.65rem;
+    text-align: center;
+    border-radius: 6px;
+    background: var(--bg-light);
+    cursor: pointer;
+}
+
+.segmented-control input:checked + span {
+    background: var(--accent);
+    color: white;
+}
+
+.modal-content select,
+.setup-modal input {
+    padding: 0.55rem;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 5px;
+    background: var(--bg-light);
+    color: var(--text);
+}
+
+.model-select {
+    width: 100%;
+}
+
+.model-detail {
+    margin-top: 0.55rem;
+}
+
+.model-summary {
+    font-size: 0.8rem;
+    color: #cbd5e1;
+}
+
+.model-summary p {
+    margin-top: 0.2rem;
+    color: var(--text-muted);
+}
+
+.tag-row {
+    display: flex;
+    gap: 0.35rem;
+    margin-top: 0.35rem;
+}
+
+.tag,
+.health-chip {
+    display: inline-block;
+    padding: 0.2rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    background: #334155;
+}
+
+.tag.ready, .health-ready { background: rgba(74,222,128,0.2); color: #86efac; }
+.tag.missing, .health-missing_key, .health-provider_unavailable, .health-failed { background: rgba(239,68,68,0.2); color: #fca5a5; }
+.tag.experimental, .health-adjusted { background: rgba(245,158,11,0.2); color: #fcd34d; }
+
+.matchup-grid,
+.game-fields,
+.custom-grid {
+    display: grid;
+    gap: 0.7rem;
+}
+
+.matchup-grid { grid-template-columns: repeat(3, 1fr); }
+.game-fields, .custom-grid { grid-template-columns: repeat(4, 1fr); }
+
+.matchup-grid label,
+.game-fields label,
+.custom-grid label {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.game-fields input,
+.custom-grid input,
+.custom-grid select {
+    width: 100%;
+}
+
+.matchup-summary {
+    padding-top: 0.45rem;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.matchup-summary > span {
+    display: inline-block;
+    min-width: 60px;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.matchup-summary .model-summary {
+    display: inline;
+}
+
+.custom-settings summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.custom-settings summary span {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: normal;
+    margin-left: 0.4rem;
+}
+
+.custom-grid { margin-top: 0.9rem; }
+
+.toggle-row,
+.health-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 0.8rem;
+    flex-wrap: wrap;
+}
+
+.toggle-row label {
+    justify-content: flex-start;
+    gap: 0.45rem;
+}
+
+.toggle-row input {
+    width: auto;
+}
+
+#health-check-btn {
+    padding: 0.5rem 0.8rem;
+    background: var(--bg-light);
+    color: var(--text);
+    font-size: 0.8rem;
+}
+
+#health-status {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.setup-errors {
+    padding: 0.7rem;
+    border-radius: 6px;
+    background: rgba(239,68,68,0.14);
+    color: #fecaca;
+    font-size: 0.8rem;
+}
+
+.primary-button {
+    background: var(--accent);
+    color: white;
+}
+
+button:disabled,
+select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 #memory-content {
     margin: 1rem 0;
     padding: 0.75rem;
@@ -652,5 +883,11 @@ button:active {
 
     .display-text {
         font-size: 0.95rem;
+    }
+
+    .matchup-grid,
+    .game-fields,
+    .custom-grid {
+        grid-template-columns: 1fr 1fr;
     }
 }

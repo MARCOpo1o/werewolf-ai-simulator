@@ -9,8 +9,11 @@ carries both requested_model and resolved_model.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass, replace
+from enum import Enum
+from typing import Any, Optional
+
+from werewolf.llm.provider import GenerationConfig
 
 
 @dataclass(frozen=True)
@@ -20,6 +23,36 @@ class ModelSpec:
     model: str                     # provider model slug
     api_key_env: tuple[str, ...] = ("GROK_API_KEY", "XAI_API_KEY")
     reasoning_effort: Optional[str] = None  # xAI: none|low|medium|high
+    display_name: str = "Custom model"
+    family: str = "Custom"
+    description: str = "Provider model specified outside the curated catalog."
+    speed_tier: str = "unknown"
+    cost_tier: str = "unknown"
+    tags: tuple[str, ...] = ()
+    sort_order: int = 999
+    selectable: bool = False
+    experimental: bool = True
+    acceptable_resolved_models: tuple[str, ...] = ()
+    resolved_model_prefixes: tuple[str, ...] = ()
+
+
+class ProviderBuildStatus(str, Enum):
+    READY = "ready"
+    MISSING_CREDENTIAL = "missing_credential"
+    DEPENDENCY_UNAVAILABLE = "dependency_unavailable"
+    INITIALIZATION_FAILED = "initialization_failed"
+
+
+@dataclass(frozen=True)
+class ProviderBuildResult:
+    provider: Any = None
+    status: ProviderBuildStatus = ProviderBuildStatus.INITIALIZATION_FAILED
+    error: Optional[str] = None
+    required_credentials: tuple[str, ...] = ()
+
+    @property
+    def ok(self) -> bool:
+        return self.status == ProviderBuildStatus.READY and self.provider is not None
 
 
 # NOTE (research comparability): before 2026-07 these aliases pointed at
@@ -39,12 +72,32 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         provider="xai",
         model="grok-4.3",
         reasoning_effort=None,
+        display_name="Grok 4.3 Fast",
+        family="Grok",
+        description="Default-speed Grok configuration for interactive games.",
+        speed_tier="fast",
+        cost_tier="medium",
+        tags=("default", "interactive"),
+        sort_order=10,
+        selectable=True,
+        experimental=False,
+        acceptable_resolved_models=("grok-4.3",),
     ),
     "reasoning": ModelSpec(
         alias="reasoning",
         provider="xai",
         model="grok-4.3",
         reasoning_effort="low",
+        display_name="Grok 4.3 Reasoning",
+        family="Grok",
+        description="Grok 4.3 with low reasoning effort configured by default.",
+        speed_tier="medium",
+        cost_tier="medium",
+        tags=("reasoning",),
+        sort_order=20,
+        selectable=True,
+        experimental=False,
+        acceptable_resolved_models=("grok-4.3",),
     ),
     # Google does not return billed cost in API responses, so records from
     # these models carry cost_source=pricing_table_estimate (LiteLLM price
@@ -55,6 +108,18 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         provider="litellm",
         model="gemini/gemini-3.1-flash-lite",  # $0.25/$1.50 per 1M (paid tier)
         api_key_env=("GEMINI_API_KEY",),
+        display_name="Gemini 3.1 Flash Lite",
+        family="Gemini",
+        description="Low-cost baseline useful for larger exploratory batches.",
+        speed_tier="fast",
+        cost_tier="low",
+        tags=("baseline", "batch"),
+        sort_order=30,
+        selectable=True,
+        experimental=False,
+        acceptable_resolved_models=(
+            "gemini/gemini-3.1-flash-lite", "gemini-3.1-flash-lite",
+        ),
     ),
     # reasoning_effort="low" caps Gemini's thinking budget (LiteLLM maps it
     # to thinkingBudget); default dynamic thinking burned ~160 reasoning
@@ -65,6 +130,18 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         model="gemini/gemini-3.5-flash",  # $1.50/$9.00 per 1M (paid tier)
         api_key_env=("GEMINI_API_KEY",),
         reasoning_effort="low",
+        display_name="Gemini 3.5 Flash",
+        family="Gemini",
+        description="General-purpose Gemini model with low reasoning effort by default.",
+        speed_tier="fast",
+        cost_tier="medium",
+        tags=("reasoning", "interactive"),
+        sort_order=40,
+        selectable=True,
+        experimental=False,
+        acceptable_resolved_models=(
+            "gemini/gemini-3.5-flash", "gemini-3.5-flash",
+        ),
     ),
     # Anthropic (date-pinned where the API offers it, for reproducibility)
     "claude_haiku": ModelSpec(
@@ -72,12 +149,36 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         provider="litellm",
         model="anthropic/claude-haiku-4-5-20251001",  # $1.00/$5.00 per 1M
         api_key_env=("ANTHROPIC_API_KEY",),
+        display_name="Claude Haiku 4.5",
+        family="Claude",
+        description="Date-pinned Anthropic model suited to lower-cost comparisons.",
+        speed_tier="fast",
+        cost_tier="medium",
+        tags=("date-pinned",),
+        sort_order=50,
+        selectable=True,
+        experimental=False,
+        acceptable_resolved_models=(
+            "anthropic/claude-haiku-4-5-20251001", "claude-haiku-4-5-20251001",
+        ),
     ),
     "claude_sonnet": ModelSpec(
         alias="claude_sonnet",
         provider="litellm",
         model="anthropic/claude-sonnet-5",  # $2.00/$10.00 per 1M
         api_key_env=("ANTHROPIC_API_KEY",),
+        display_name="Claude Sonnet 5",
+        family="Claude",
+        description="Anthropic Sonnet configuration for higher-capability comparisons.",
+        speed_tier="medium",
+        cost_tier="high",
+        tags=("comparison",),
+        sort_order=60,
+        selectable=True,
+        experimental=False,
+        acceptable_resolved_models=(
+            "anthropic/claude-sonnet-5", "claude-sonnet-5",
+        ),
     ),
     # OpenAI (per developers.openai.com/api/docs/models, 2026-07)
     "gpt_nano": ModelSpec(
@@ -85,6 +186,18 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         provider="litellm",
         model="openai/gpt-5.4-nano-2026-03-17",  # $0.20/$1.25 per 1M, date-pinned
         api_key_env=("OPENAI_API_KEY",),
+        display_name="GPT-5.4 Nano",
+        family="GPT",
+        description="Date-pinned low-cost OpenAI baseline.",
+        speed_tier="fast",
+        cost_tier="low",
+        tags=("baseline", "date-pinned"),
+        sort_order=70,
+        selectable=True,
+        experimental=False,
+        acceptable_resolved_models=(
+            "openai/gpt-5.4-nano-2026-03-17", "gpt-5.4-nano-2026-03-17",
+        ),
     ),
     "gpt_luna": ModelSpec(
         alias="gpt_luna",
@@ -92,6 +205,16 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         model="openai/gpt-5.6-luna",  # $1.00/$6.00 per 1M, reasoning model
         api_key_env=("OPENAI_API_KEY",),
         reasoning_effort="low",  # cap thinking cost, as with gemini_flash
+        display_name="GPT-5.6 Luna",
+        family="GPT",
+        description="OpenAI reasoning model with low effort configured by default.",
+        speed_tier="medium",
+        cost_tier="medium",
+        tags=("reasoning",),
+        sort_order=80,
+        selectable=True,
+        experimental=True,
+        acceptable_resolved_models=("openai/gpt-5.6-luna", "gpt-5.6-luna"),
     ),
 }
 
@@ -136,30 +259,110 @@ def get_api_key(spec: ModelSpec) -> str:
     return ""
 
 
-def build_provider(spec: ModelSpec, api_key: Optional[str] = None):
-    """Construct a Provider for the spec, or None when no key/SDK is
-    available (callers then use the existing random-fallback path).
+def _safe_initialization_error(exc: Exception, secret: str = "") -> str:
+    """Return a bounded message without echoing credentials."""
+    text = str(exc).replace("\n", " ").strip()
+    if secret:
+        text = text.replace(secret, "[REDACTED]")
+    return text[:300] or exc.__class__.__name__
 
-    The key is passed straight into the provider client and is not
-    retained by this module.
-    """
+
+def build_provider(spec: ModelSpec, api_key: Optional[str] = None) -> ProviderBuildResult:
+    """Construct a provider and preserve why construction was unavailable."""
     key = api_key if api_key is not None else get_api_key(spec)
     if not key:
-        return None
+        return ProviderBuildResult(
+            status=ProviderBuildStatus.MISSING_CREDENTIAL,
+            error="No configured credential was found.",
+            required_credentials=spec.api_key_env,
+        )
 
     if spec.provider == "xai":
         try:
             from werewolf.llm.xai_provider import XAIProvider
-            return XAIProvider(api_key=key)
-        except RuntimeError:  # xai-sdk not installed
-            return None
-    if spec.provider == "litellm":
+            provider = XAIProvider(api_key=key)
+        except (ImportError, ModuleNotFoundError) as exc:
+            return ProviderBuildResult(
+                status=ProviderBuildStatus.DEPENDENCY_UNAVAILABLE,
+                error=_safe_initialization_error(exc, key),
+                required_credentials=spec.api_key_env,
+            )
+        except RuntimeError as exc:
+            status = (ProviderBuildStatus.DEPENDENCY_UNAVAILABLE
+                      if "not installed" in str(exc).lower()
+                      else ProviderBuildStatus.INITIALIZATION_FAILED)
+            return ProviderBuildResult(
+                status=status, error=_safe_initialization_error(exc, key),
+                required_credentials=spec.api_key_env,
+            )
+        except Exception as exc:
+            return ProviderBuildResult(
+                status=ProviderBuildStatus.INITIALIZATION_FAILED,
+                error=_safe_initialization_error(exc, key),
+                required_credentials=spec.api_key_env,
+            )
+    elif spec.provider == "litellm":
         try:
             from werewolf.llm.litellm_provider import LiteLLMProvider
-            return LiteLLMProvider(api_key=key)
-        except (ImportError, RuntimeError):
-            return None
-    raise ValueError(f"Unknown provider: {spec.provider}")
+            provider = LiteLLMProvider(api_key=key)
+        except (ImportError, ModuleNotFoundError) as exc:
+            return ProviderBuildResult(
+                status=ProviderBuildStatus.DEPENDENCY_UNAVAILABLE,
+                error=_safe_initialization_error(exc, key),
+                required_credentials=spec.api_key_env,
+            )
+        except RuntimeError as exc:
+            status = (ProviderBuildStatus.DEPENDENCY_UNAVAILABLE
+                      if "not installed" in str(exc).lower()
+                      else ProviderBuildStatus.INITIALIZATION_FAILED)
+            return ProviderBuildResult(
+                status=status, error=_safe_initialization_error(exc, key),
+                required_credentials=spec.api_key_env,
+            )
+        except Exception as exc:
+            return ProviderBuildResult(
+                status=ProviderBuildStatus.INITIALIZATION_FAILED,
+                error=_safe_initialization_error(exc, key),
+                required_credentials=spec.api_key_env,
+            )
+    else:
+        return ProviderBuildResult(
+            status=ProviderBuildStatus.INITIALIZATION_FAILED,
+            error=f"Unknown provider: {spec.provider}",
+            required_credentials=spec.api_key_env,
+        )
+    return ProviderBuildResult(
+        provider=provider,
+        status=ProviderBuildStatus.READY,
+        required_credentials=spec.api_key_env,
+    )
+
+
+def effective_generation_config(
+    requested: GenerationConfig,
+    model_spec: ModelSpec,
+    reasoning_override: Optional[str] = None,
+) -> GenerationConfig:
+    """Apply the sole reasoning precedence policy used by every surface."""
+    effort = (reasoning_override
+              if reasoning_override is not None
+              else model_spec.reasoning_effort)
+    return replace(requested, reasoning_effort=effort)
+
+
+def resolved_model_matches(spec: ModelSpec, resolved: Optional[str]) -> bool:
+    if not resolved:
+        return False
+    if resolved == spec.model or resolved in spec.acceptable_resolved_models:
+        return True
+    return any(resolved.startswith(prefix) for prefix in spec.resolved_model_prefixes)
+
+
+def selectable_models() -> list[ModelSpec]:
+    return sorted(
+        (spec for spec in MODEL_REGISTRY.values() if spec.selectable),
+        key=lambda spec: (spec.sort_order, spec.alias or ""),
+    )
 
 
 def registry_snapshot() -> dict:
@@ -171,6 +374,8 @@ def registry_snapshot() -> dict:
             "model": spec.model,
             "api_key_env": list(spec.api_key_env),
             "reasoning_effort": spec.reasoning_effort,
+            "acceptable_resolved_models": list(spec.acceptable_resolved_models),
+            "resolved_model_prefixes": list(spec.resolved_model_prefixes),
         }
         for alias, spec in MODEL_REGISTRY.items()
     }

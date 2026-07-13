@@ -8,6 +8,8 @@ from werewolf.llm.registry import (
     ModelSpec,
     get_api_key,
     registry_snapshot,
+    resolved_model_matches,
+    selectable_models,
     resolve,
 )
 
@@ -68,13 +70,34 @@ class ResolveTests(unittest.TestCase):
             self.skipTest("litellm not installed")
         from werewolf.llm.litellm_provider import LiteLLMProvider
         from werewolf.llm.registry import build_provider
-        provider = build_provider(resolve("gemini_flash"), api_key="test-key")
-        self.assertIsInstance(provider, LiteLLMProvider)
-        self.assertIsNone(build_provider(resolve("gemini_flash"), api_key=""))
+        result = build_provider(resolve("gemini_flash"), api_key="test-key")
+        self.assertTrue(result.ok)
+        self.assertIsInstance(result.provider, LiteLLMProvider)
+        missing = build_provider(resolve("gemini_flash"), api_key="")
+        self.assertFalse(missing.ok)
+        self.assertEqual(missing.status.value, "missing_credential")
 
     def test_registry_specs_are_frozen(self):
         with self.assertRaises(Exception):
             MODEL_REGISTRY["fast"].model = "other"
+
+    def test_provider_build_statuses_and_secret_redaction(self):
+        from werewolf.llm.registry import ProviderBuildStatus, build_provider
+        spec = resolve("gemini_flash")
+        with mock.patch(
+            "werewolf.llm.litellm_provider.LiteLLMProvider",
+            side_effect=RuntimeError("litellm is not installed"),
+        ):
+            dependency = build_provider(spec, api_key="secret-value")
+        self.assertEqual(dependency.status, ProviderBuildStatus.DEPENDENCY_UNAVAILABLE)
+
+        with mock.patch(
+            "werewolf.llm.litellm_provider.LiteLLMProvider",
+            side_effect=ValueError("initialization rejected secret-value"),
+        ):
+            failed = build_provider(spec, api_key="secret-value")
+        self.assertEqual(failed.status, ProviderBuildStatus.INITIALIZATION_FAILED)
+        self.assertNotIn("secret-value", failed.error)
 
 
 class ApiKeyTests(unittest.TestCase):
@@ -113,6 +136,28 @@ class SnapshotTests(unittest.TestCase):
             self.assertIn("provider", entry)
             self.assertIn("model", entry)
             self.assertIn("api_key_env", entry)
+
+
+class CatalogTests(unittest.TestCase):
+    def test_selectable_catalog_has_complete_factual_metadata(self):
+        specs = selectable_models()
+        self.assertTrue(specs)
+        self.assertEqual(specs, sorted(specs, key=lambda s: (s.sort_order, s.alias)))
+        for spec in specs:
+            self.assertTrue(spec.alias)
+            self.assertTrue(spec.display_name)
+            self.assertTrue(spec.family)
+            self.assertTrue(spec.description)
+            self.assertIn(spec.speed_tier, {"fast", "medium", "slow"})
+            self.assertIn(spec.cost_tier, {"low", "medium", "high"})
+
+    def test_resolved_model_matching_is_explicit(self):
+        spec = resolve("gpt_nano")
+        self.assertTrue(resolved_model_matches(spec, spec.model))
+        self.assertTrue(resolved_model_matches(spec, "gpt-5.4-nano-2026-03-17"))
+        self.assertFalse(resolved_model_matches(spec, "gpt-5.4"))
+        self.assertFalse(resolved_model_matches(spec, "gpt-5.4-preview"))
+        self.assertFalse(resolved_model_matches(spec, None))
 
 
 if __name__ == "__main__":
