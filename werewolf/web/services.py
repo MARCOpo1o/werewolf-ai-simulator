@@ -280,11 +280,18 @@ def health_check(alias: str, data: Any) -> tuple[dict, int]:
     json_valid = False
     if text:
         try:
-            json.loads(text)
-            json_valid = True
+            parsed = json.loads(text)
+            json_valid = (
+                isinstance(parsed, dict) and parsed.get("health") == "ok"
+            )
         except (TypeError, ValueError):
             pass
-    model_match = resolved_model_matches(spec, result.resolved_model)
+    if not result.resolved_model:
+        model_identity = "unreported"
+    elif resolved_model_matches(spec, result.resolved_model):
+        model_identity = "matched"
+    else:
+        model_identity = "mismatched"
     metadata = result.provider_metadata or {}
     dropped = list(metadata.get("generation_dropped") or [])
     adjusted = list(metadata.get("generation_adjusted") or [])
@@ -293,11 +300,23 @@ def health_check(alias: str, data: Any) -> tuple[dict, int]:
         "api_ok": bool(result.ok),
         "nonempty_output": bool(text),
         "json_valid": json_valid,
-        "model_match": model_match,
+        "model_match": (
+            True if model_identity == "matched"
+            else False if model_identity == "mismatched"
+            else None
+        ),
+        "model_identity": model_identity,
         "generation_adjustments_detected": adjustments_detected,
     }
-    usable = all((checks["api_ok"], checks["nonempty_output"], json_valid, model_match))
-    status = "adjusted" if usable and adjustments_detected else "ready" if usable else "failed"
+    usable = all((
+        checks["api_ok"], checks["nonempty_output"], json_valid,
+        model_identity != "mismatched",
+    ))
+    needs_adjustment = adjustments_detected or model_identity == "unreported"
+    status = "adjusted" if usable and needs_adjustment else "ready" if usable else "failed"
+    warnings = []
+    if model_identity == "unreported":
+        warnings.append("Provider did not report the resolved model identity.")
     return {
         "status": status,
         "checks": checks,
@@ -307,6 +326,7 @@ def health_check(alias: str, data: Any) -> tuple[dict, int]:
         "effective_generation": effective.to_json_dict(),
         "generation_dropped": dropped,
         "generation_adjusted": adjusted,
+        "warnings": warnings,
         "latency_ms": result.latency_ms,
         "finish_reason": result.finish_reason,
         "usage": result.usage.to_json_dict(),

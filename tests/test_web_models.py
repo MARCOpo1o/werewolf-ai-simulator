@@ -180,15 +180,46 @@ class HealthCheckTests(unittest.TestCase):
         self.assertEqual(body["status"], "adjusted")
         self.assertEqual(body["generation_dropped"], ["top_p"])
 
-    def test_model_mismatch_and_malformed_json_fail(self):
+    def test_malformed_json_fails_with_matching_model(self):
         provider = FakeProvider(results=[success_result(
-            text="not-json", resolved_model="gpt-5.4-preview",
+            text="not-json", resolved_model="gpt-5.4-nano-2026-03-17",
         )])
         with mock.patch("werewolf.web.services.build_provider", return_value=ready_build(provider)):
             body, _ = health_check("gpt_nano", {})
         self.assertEqual(body["status"], "failed")
         self.assertFalse(body["checks"]["json_valid"])
-        self.assertFalse(body["checks"]["model_match"])
+        self.assertTrue(body["checks"]["model_match"])
+
+    def test_wrong_json_shapes_and_objects_fail_contract(self):
+        for text in ('[]', '"hello"', '{"error": "model unavailable"}'):
+            provider = FakeProvider(results=[success_result(
+                text=text, resolved_model="grok-4.3",
+            )])
+            with mock.patch("werewolf.web.services.build_provider", return_value=ready_build(provider)):
+                body, _ = health_check("fast", {})
+            self.assertEqual(body["status"], "failed", text)
+            self.assertFalse(body["checks"]["json_valid"], text)
+
+    def test_unreported_model_is_adjusted_with_warning(self):
+        provider = FakeProvider(results=[success_result(
+            {"health": "ok"}, resolved_model=None,
+        )])
+        with mock.patch("werewolf.web.services.build_provider", return_value=ready_build(provider)):
+            body, _ = health_check("fast", {})
+        self.assertEqual(body["status"], "adjusted")
+        self.assertEqual(body["checks"]["model_identity"], "unreported")
+        self.assertIsNone(body["checks"]["model_match"])
+        self.assertTrue(body["warnings"])
+
+    def test_mismatched_model_fails_independently(self):
+        provider = FakeProvider(results=[success_result(
+            {"health": "ok"}, resolved_model="gpt-5.4-preview",
+        )])
+        with mock.patch("werewolf.web.services.build_provider", return_value=ready_build(provider)):
+            body, _ = health_check("gpt_nano", {})
+        self.assertEqual(body["status"], "failed")
+        self.assertTrue(body["checks"]["json_valid"])
+        self.assertEqual(body["checks"]["model_identity"], "mismatched")
 
     def test_missing_key_is_distinct_from_provider_unavailable(self):
         missing = ProviderBuildResult(
