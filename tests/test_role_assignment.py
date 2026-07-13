@@ -81,6 +81,27 @@ class RoleModelAssignmentTests(unittest.TestCase):
                     transcript_enabled=False,
                 )
 
+    def test_explicit_none_role_provider_requires_fallback_opt_in(self):
+        role_models = {
+            "werewolf": "model_a", "villager": "model_b", "seer": "model_b",
+        }
+        role_providers = {role: None for role in role_models}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaisesRegex(RuntimeError, "Provider for role werewolf"):
+                GameEngine(
+                    n_players=4, n_wolves=1, n_seers=0, seed=1,
+                    output_dir=tmpdir, role_models=role_models,
+                    role_providers=role_providers, transcript_enabled=False,
+                )
+            engine = GameEngine(
+                n_players=4, n_wolves=1, n_seers=0, seed=1,
+                output_dir=tmpdir, role_models=role_models,
+                role_providers=role_providers, transcript_enabled=False,
+                allow_provider_fallback=True,
+            )
+            self.assertTrue(all(agent.provider is None for agent in engine.agents.values()))
+            engine.close()
+
 
 class CrossedExperimentTests(unittest.TestCase):
     def test_condition_matrix(self):

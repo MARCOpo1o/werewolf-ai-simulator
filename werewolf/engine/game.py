@@ -272,7 +272,13 @@ class GameEngine:
             spec = resolve(name)
             specs[role] = spec
             if role in role_providers:
-                providers[role] = role_providers[role]
+                selected = role_providers[role]
+                if selected is None and not self.allow_provider_fallback:
+                    raise RuntimeError(
+                        f"Provider for role {role} is unavailable; "
+                        "set allow_provider_fallback=True for intentional fallback."
+                    )
+                providers[role] = selected
             else:
                 cache_key = (spec.provider, spec.model, spec.api_key_env)
                 if cache_key not in provider_cache:
