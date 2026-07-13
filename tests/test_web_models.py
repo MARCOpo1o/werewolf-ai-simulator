@@ -56,6 +56,23 @@ class GenerationResolutionTests(unittest.TestCase):
             })
         self.assertIn("generation_config.reasoning_effort", ctx.exception.errors)
 
+    def test_web_rejects_non_string_reasoning_and_non_finite_numbers(self):
+        for override in ([], {"effort": "low"}, 1):
+            with self.assertRaises(RequestValidationError) as ctx:
+                parse_generation_settings({"reasoning_override": override})
+            self.assertEqual(
+                ctx.exception.errors["reasoning_override"]["code"], "invalid_value",
+            )
+        for value in (float("nan"), float("inf"), float("-inf")):
+            with self.assertRaises(RequestValidationError) as ctx:
+                parse_generation_settings({
+                    "generation_config": {"temperature": value},
+                })
+            self.assertEqual(
+                ctx.exception.errors["generation_config.temperature"]["code"],
+                "invalid_value",
+            )
+
     def test_engine_normalizes_legacy_reasoning_inputs(self):
         provider = FakeProvider()
         with tempfile.TemporaryDirectory() as tmpdir:

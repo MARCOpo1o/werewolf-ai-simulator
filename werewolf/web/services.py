@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -86,6 +87,11 @@ def parse_generation_settings(data: dict) -> tuple[GenerationConfig, Optional[st
                 "invalid_type", f"{key} must be {'an integer' if integer else 'a number'} or null",
             )
             return None
+        if isinstance(value, float) and not math.isfinite(value):
+            errors[f"generation_config.{key}"] = _error(
+                "invalid_value", f"{key} must be finite",
+            )
+            return None
         if minimum is not None and value < minimum or maximum is not None and value > maximum:
             errors[f"generation_config.{key}"] = _error(
                 "out_of_range", f"{key} must be between {minimum} and {maximum}",
@@ -101,7 +107,9 @@ def parse_generation_settings(data: dict) -> tuple[GenerationConfig, Optional[st
         structured = False
 
     override = data.get("reasoning_override")
-    if override is not None and override not in _REASONING_VALUES:
+    if override is not None and (
+        not isinstance(override, str) or override not in _REASONING_VALUES
+    ):
         errors["reasoning_override"] = _error(
             "invalid_value", "reasoning_override must be null, none, low, medium, or high",
         )
