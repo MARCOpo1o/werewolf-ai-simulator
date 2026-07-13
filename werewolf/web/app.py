@@ -3,6 +3,7 @@ import threading
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, render_template
+from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 from werewolf.engine.game import GameEngine
 from werewolf.llm.registry import get_api_key, selectable_models
@@ -18,6 +19,28 @@ app = Flask(__name__)
 
 game_engine: GameEngine | None = None
 _game_lock = threading.RLock()
+
+
+def _request_json_object():
+    try:
+        data = request.get_json(silent=False)
+    except (BadRequest, UnsupportedMediaType):
+        return None, (jsonify({
+            "error": "Invalid JSON",
+            "errors": {"request": {
+                "code": "invalid_json",
+                "message": "Request body must contain valid JSON.",
+            }},
+        }), 400)
+    if not isinstance(data, dict):
+        return None, (jsonify({
+            "error": "Invalid request",
+            "errors": {"request": {
+                "code": "invalid_type",
+                "message": "Request body must be a JSON object.",
+            }},
+        }), 400)
+    return data, None
 
 
 @app.route("/")
@@ -58,14 +81,19 @@ def get_models():
 
 @app.route("/api/models/<alias>/health-check", methods=["POST"])
 def check_model(alias: str):
-    body, status_code = health_check(alias, request.get_json(silent=True) or {})
+    data, error_response = _request_json_object()
+    if error_response is not None:
+        return error_response
+    body, status_code = health_check(alias, data)
     return jsonify(body), status_code
 
 
 @app.route("/api/new", methods=["POST"])
 def new_game():
     global game_engine
-    data = request.get_json(silent=True) or {}
+    data, error_response = _request_json_object()
+    if error_response is not None:
+        return error_response
     try:
         new_engine = create_engine_from_payload(data)
     except RequestValidationError as exc:

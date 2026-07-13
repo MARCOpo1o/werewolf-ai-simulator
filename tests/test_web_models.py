@@ -1,4 +1,5 @@
 import importlib
+import json
 import tempfile
 import unittest
 from unittest import mock
@@ -236,6 +237,33 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("Model Matchup", html)
         self.assertIn("Custom settings", html)
         self.assertIn("health-check-btn", html)
+
+    def test_new_game_rejects_malformed_and_non_object_json(self):
+        malformed = self.client.post(
+            "/api/new", data="{broken", content_type="application/json",
+        )
+        self.assertEqual(malformed.status_code, 400)
+        self.assertEqual(malformed.get_json()["errors"]["request"]["code"], "invalid_json")
+        empty = self.client.post("/api/new")
+        self.assertEqual(empty.status_code, 400)
+        self.assertEqual(empty.get_json()["errors"]["request"]["code"], "invalid_json")
+        for value in (None, False, [], 0, "text"):
+            response = self.client.post(
+                "/api/new", data=json.dumps(value), content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 400, value)
+            self.assertEqual(response.get_json()["errors"]["request"]["code"], "invalid_type")
+
+    def test_health_check_rejects_malformed_and_non_object_json(self):
+        malformed = self.client.post(
+            "/api/models/fast/health-check",
+            data="{broken", content_type="application/json",
+        )
+        self.assertEqual(malformed.status_code, 400)
+        self.assertEqual(malformed.get_json()["errors"]["request"]["code"], "invalid_json")
+        response = self.client.post("/api/models/fast/health-check", json=[])
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["errors"]["request"]["code"], "invalid_type")
 
     def test_failed_creation_preserves_active_engine(self):
         old_engine = mock.Mock()
