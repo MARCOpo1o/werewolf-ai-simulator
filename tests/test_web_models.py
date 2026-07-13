@@ -326,6 +326,26 @@ class EngineLifecycleTests(unittest.TestCase):
             self.assertEqual(len(closed), 1)
             self.assertTrue(closed[0].file.closed)
 
+    def test_early_post_logger_failure_closes_logger(self):
+        closed = []
+        original_close = JSONLLogger.close
+
+        def tracked_close(logger):
+            closed.append(logger)
+            original_close(logger)
+
+        with tempfile.TemporaryDirectory() as tmpdir, \
+             mock.patch("werewolf.engine.game.JSONLLogger.close", autospec=True, side_effect=tracked_close), \
+             mock.patch("werewolf.engine.game.get_prompt_version", side_effect=RuntimeError("prompt failure")):
+            with self.assertRaisesRegex(RuntimeError, "prompt failure"):
+                GameEngine(
+                    n_players=4, n_wolves=1, n_seers=0, seed=4,
+                    output_dir=tmpdir, provider=FakeProvider(),
+                    transcript_enabled=False, belief_snapshots=False,
+                )
+        self.assertEqual(len(closed), 1)
+        self.assertTrue(closed[0].file.closed)
+
     def test_web_phase_completion_closes_logger_after_outcome(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             engine = GameEngine(

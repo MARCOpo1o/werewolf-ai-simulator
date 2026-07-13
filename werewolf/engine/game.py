@@ -156,15 +156,18 @@ class GameEngine:
         )
 
         self.logger = JSONLLogger(output_dir, self.state.game_id)
-        self.ledger = ledger or UsageLedger(sink=self.logger.log_llm_call)
-
-        run_context = {
-            "game_id": self.state.game_id,
-            "seed": seed,
-            "batch_id": batch_id,
-            "trial_index": trial_index,
-            "prompt_version": get_prompt_version(),
-        }
+        try:
+            self.ledger = ledger or UsageLedger(sink=self.logger.log_llm_call)
+            run_context = {
+                "game_id": self.state.game_id,
+                "seed": seed,
+                "batch_id": batch_id,
+                "trial_index": trial_index,
+                "prompt_version": get_prompt_version(),
+            }
+        except Exception:
+            self.close()
+            raise
         self.role_models_resolved = None
         try:
             if role_models:
