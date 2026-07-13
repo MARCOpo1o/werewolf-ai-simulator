@@ -1,5 +1,6 @@
 import importlib
 import json
+from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
@@ -317,6 +318,11 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("Model Matchup", html)
         self.assertIn("Custom settings", html)
         self.assertIn("health-check-btn", html)
+        javascript = (
+            Path(__file__).parents[1] / "werewolf" / "web" / "static" / "app.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("healthRelevantControls", javascript)
+        self.assertIn("Number.isInteger", javascript)
 
     def test_new_game_rejects_malformed_and_non_object_json(self):
         malformed = self.client.post(

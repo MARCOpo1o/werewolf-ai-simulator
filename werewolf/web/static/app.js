@@ -140,7 +140,11 @@ function updateSeerControl() {
 function optionalNumber(id, integer = false) {
     const raw = document.getElementById(id).value.trim();
     if (raw === '') return null;
-    return integer ? parseInt(raw, 10) : parseFloat(raw);
+    const value = Number(raw);
+    if (!Number.isFinite(value) || (integer && !Number.isInteger(value))) {
+        return raw;
+    }
+    return value;
 }
 
 function generationPayload() {
@@ -774,6 +778,19 @@ document.querySelectorAll('.model-select').forEach(select =>
     }));
 document.getElementById('input-seers').addEventListener('change', updateSeerControl);
 document.getElementById('health-check-btn').addEventListener('click', checkSelectedModels);
+const healthRelevantControls = [
+    'input-temperature',
+    'input-top-p',
+    'input-max-tokens',
+    'input-provider-seed',
+    'input-structured',
+    'input-reasoning',
+];
+healthRelevantControls.forEach(id => {
+    const element = document.getElementById(id);
+    element.addEventListener('input', renderCachedHealth);
+    element.addEventListener('change', renderCachedHealth);
+});
 
 document.addEventListener('keydown', (e) => {
     if (e.code !== 'Space' && e.code !== 'Enter') return;
