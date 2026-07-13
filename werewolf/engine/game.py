@@ -117,7 +117,7 @@ class GameEngine:
             if "villager" not in role_models:
                 raise ValueError('role_models requires at least a "villager" entry')
         self.belief_snapshots = belief_snapshots
-        from werewolf.llm.registry import effective_generation_config, resolve
+        from werewolf.llm.registry import build_provider, effective_generation_config, resolve
 
         requested_generation = generation_config or GenerationConfig()
         normalized_reasoning = reasoning_effort
@@ -173,12 +173,26 @@ class GameEngine:
                 )
             else:
                 spec = resolve(model_alias or model)
+                selected_provider = provider
+                if selected_provider is None and api_key:
+                    build = build_provider(spec, api_key=api_key)
+                    selected_provider = build.provider
+                    if not build.ok and not self.allow_provider_fallback:
+                        raise RuntimeError(
+                            f"Provider is unavailable ({build.status.value}): "
+                            f"{build.error or 'no details'}"
+                        )
+                if selected_provider is None and not self.allow_provider_fallback:
+                    raise RuntimeError(
+                        "Provider is unavailable; set allow_provider_fallback=True "
+                        "only for explicit fallback tests."
+                    )
                 self.generation_config = effective_generation_config(
                     self.requested_generation_config, spec, self.reasoning_override,
                 )
                 self.agents: dict[int, AIAgent] = create_agents(
-                    self.players, api_key, model, show_prompts,
-                    provider=provider,
+                    self.players, "", model, show_prompts,
+                    provider=selected_provider,
                     ledger=self.ledger,
                     run_context=run_context,
                     model_alias=model_alias,

@@ -21,6 +21,7 @@ class IntegrationTests(unittest.TestCase):
                 api_key="",
                 transcript_enabled=False,
                 show_all_channels=False,
+                allow_provider_fallback=True,
             )
 
             seen_phases = []
@@ -44,6 +45,7 @@ class IntegrationTests(unittest.TestCase):
                 api_key="",
                 transcript_enabled=False,
                 show_all_channels=False,
+                allow_provider_fallback=True,
             )
             winner = engine.run()
 
@@ -74,6 +76,7 @@ class IntegrationTests(unittest.TestCase):
                     api_key="",
                     model="grok-4-1-fast",
                     quiet=True,
+                    allow_provider_fallback=True,
                 )
                 records.append(record)
 

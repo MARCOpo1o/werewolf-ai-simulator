@@ -288,6 +288,7 @@ class EngineIntegrationTests(unittest.TestCase):
             engine = GameEngine(
                 n_players=5, n_wolves=1, n_seers=0, seed=123,
                 output_dir=tmpdir, api_key="",
+                allow_provider_fallback=True,
                 transcript_enabled=False, show_all_channels=False,
             )
             winner = engine.run()

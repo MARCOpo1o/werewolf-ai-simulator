@@ -269,6 +269,23 @@ class EngineLifecycleTests(unittest.TestCase):
             engine.close()
             self.assertTrue(engine.logger.file.closed)
 
+    def test_homogeneous_fallback_requires_explicit_opt_in(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaisesRegex(RuntimeError, "allow_provider_fallback"):
+                GameEngine(
+                    n_players=4, n_wolves=1, n_seers=0, seed=4,
+                    output_dir=tmpdir, provider=None, api_key="",
+                    transcript_enabled=False, belief_snapshots=False,
+                )
+            engine = GameEngine(
+                n_players=4, n_wolves=1, n_seers=0, seed=4,
+                output_dir=tmpdir, provider=None, api_key="",
+                transcript_enabled=False, belief_snapshots=False,
+                allow_provider_fallback=True,
+            )
+            self.assertTrue(all(agent.provider is None for agent in engine.agents.values()))
+            engine.close()
+
     def test_late_initialization_failure_closes_logger(self):
         closed = []
         original_close = JSONLLogger.close
