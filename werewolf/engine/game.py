@@ -173,6 +173,7 @@ class GameEngine:
                 )
             else:
                 spec = resolve(model_alias or model)
+                self.model = spec.model
                 selected_provider = provider
                 if selected_provider is None and api_key:
                     build = build_provider(spec, api_key=api_key)
@@ -191,7 +192,7 @@ class GameEngine:
                     self.requested_generation_config, spec, self.reasoning_override,
                 )
                 self.agents: dict[int, AIAgent] = create_agents(
-                    self.players, "", model, show_prompts,
+                    self.players, "", spec.model, show_prompts,
                     provider=selected_provider,
                     ledger=self.ledger,
                     run_context=run_context,
@@ -228,7 +229,7 @@ class GameEngine:
                 "n_players": n_players,
                 "n_wolves": n_wolves,
                 "n_seers": n_seers,
-                "model": model,
+                "model": self.model,
                 "model_alias": model_alias,
                 "prompt_version": run_context["prompt_version"],
                 "batch_id": batch_id,

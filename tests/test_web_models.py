@@ -286,6 +286,23 @@ class EngineLifecycleTests(unittest.TestCase):
             self.assertTrue(all(agent.provider is None for agent in engine.agents.values()))
             engine.close()
 
+    def test_model_alias_controls_homogeneous_request_model(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = GameEngine(
+                n_players=4, n_wolves=1, n_seers=0, seed=4,
+                output_dir=tmpdir, model="grok-4.3",
+                model_alias="gemini_flash", provider=FakeProvider(),
+                transcript_enabled=False, belief_snapshots=False,
+            )
+            expected = MODEL_REGISTRY["gemini_flash"].model
+            self.assertEqual(engine.model, expected)
+            self.assertTrue(all(agent.model == expected for agent in engine.agents.values()))
+            self.assertEqual(
+                engine.get_state_dict()["model_assignment"]["villager"]["requested_model"],
+                expected,
+            )
+            engine.close()
+
     def test_late_initialization_failure_closes_logger(self):
         closed = []
         original_close = JSONLLogger.close
