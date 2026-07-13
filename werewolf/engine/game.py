@@ -1,5 +1,6 @@
 import random
 from collections import Counter
+from dataclasses import replace
 from typing import Optional
 
 from werewolf.engine.state import GameState, PlayerState
@@ -118,8 +119,20 @@ class GameEngine:
         self.belief_snapshots = belief_snapshots
         from werewolf.llm.registry import effective_generation_config, resolve
 
-        self.requested_generation_config = generation_config or GenerationConfig()
-        self.reasoning_override = reasoning_override
+        requested_generation = generation_config or GenerationConfig()
+        normalized_reasoning = reasoning_effort
+        if requested_generation.reasoning_effort is not None:
+            if normalized_reasoning is not None:
+                raise ValueError("Multiple legacy reasoning settings were provided")
+            normalized_reasoning = requested_generation.reasoning_effort
+        if reasoning_override is not None:
+            if normalized_reasoning is not None and normalized_reasoning != reasoning_override:
+                raise ValueError("Conflicting reasoning settings were provided")
+            normalized_reasoning = reasoning_override
+        self.requested_generation_config = replace(
+            requested_generation, reasoning_effort=None,
+        )
+        self.reasoning_override = normalized_reasoning
         self.allow_provider_fallback = allow_provider_fallback
         self._closed = False
         if discussion_cycles < 1:
@@ -161,7 +174,7 @@ class GameEngine:
             else:
                 spec = resolve(model_alias or model)
                 self.generation_config = effective_generation_config(
-                    self.requested_generation_config, spec, reasoning_override,
+                    self.requested_generation_config, spec, self.reasoning_override,
                 )
                 self.agents: dict[int, AIAgent] = create_agents(
                     self.players, api_key, model, show_prompts,
@@ -176,7 +189,7 @@ class GameEngine:
                     "requested_model": spec.model,
                     "provider": spec.provider,
                     "registry_reasoning_default": spec.reasoning_effort,
-                    "requested_reasoning_override": reasoning_override,
+                    "requested_reasoning_override": self.reasoning_override,
                     "effective_generation": self.generation_config.to_json_dict(),
                 }
                 self.role_models_resolved = {
@@ -202,7 +215,6 @@ class GameEngine:
             "n_seers": n_seers,
             "model": model,
             "model_alias": model_alias,
-            "reasoning_effort": reasoning_effort,
             "prompt_version": run_context["prompt_version"],
             "batch_id": batch_id,
             "trial_index": trial_index,
@@ -210,7 +222,7 @@ class GameEngine:
             "belief_schema_version": BELIEF_SCHEMA_VERSION if belief_snapshots else None,
             "generation_config": self.generation_config.to_json_dict(),
             "requested_generation_config": self.requested_generation_config.to_json_dict(),
-            "requested_reasoning_override": reasoning_override,
+            "requested_reasoning_override": self.reasoning_override,
             "discussion_cycles": self.discussion_cycles,
             "role_models": self.role_models_resolved,
             "limits": limits_dict(),

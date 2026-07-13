@@ -188,7 +188,6 @@ def main():
         # the right provider (gemini_* -> LiteLLM, fast/reasoning -> xAI).
         provider=provider_result.provider,
         model_alias=model_alias,
-        reasoning_effort=spec.reasoning_effort,
         belief_snapshots=not args.no_belief_snapshots,
         generation_config=GenerationConfig(
             temperature=args.temperature,

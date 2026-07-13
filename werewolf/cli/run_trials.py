@@ -99,7 +99,7 @@ def run_one_trial(
             "n_seers": n_seers,
             "model": model,
             "model_alias": model_alias,
-            "reasoning_effort": reasoning_effort,
+            "requested_reasoning_override": engine.reasoning_override,
             "role_models": engine.role_models_resolved,
         },
     }
@@ -408,7 +408,6 @@ def main():
     trial_kwargs = dict(
         provider=provider,
         model_alias=spec.alias,
-        reasoning_effort=spec.reasoning_effort,
         batch_id=run_id,
         belief_snapshots=not args.no_belief_snapshots,
         generation_config=generation_config,

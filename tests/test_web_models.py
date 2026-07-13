@@ -56,6 +56,38 @@ class GenerationResolutionTests(unittest.TestCase):
             })
         self.assertIn("generation_config.reasoning_effort", ctx.exception.errors)
 
+    def test_engine_normalizes_legacy_reasoning_inputs(self):
+        provider = FakeProvider()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = GameEngine(
+                n_players=4, n_wolves=1, n_seers=0, seed=1,
+                output_dir=tmpdir, provider=provider,
+                transcript_enabled=False, belief_snapshots=False,
+                generation_config=GenerationConfig(reasoning_effort="high"),
+            )
+            assignment = engine.get_state_dict()["model_assignment"]["villager"]
+            self.assertEqual(assignment["requested_reasoning_override"], "high")
+            self.assertEqual(
+                assignment["effective_generation"]["reasoning_effort"], "high",
+            )
+            engine.close()
+
+    def test_engine_rejects_conflicting_reasoning_inputs(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaisesRegex(ValueError, "Conflicting reasoning"):
+                GameEngine(
+                    n_players=4, n_wolves=1, n_seers=0, seed=1,
+                    output_dir=tmpdir, provider=FakeProvider(),
+                    reasoning_effort="low", reasoning_override="high",
+                )
+            with self.assertRaisesRegex(ValueError, "Multiple legacy reasoning"):
+                GameEngine(
+                    n_players=4, n_wolves=1, n_seers=0, seed=1,
+                    output_dir=tmpdir, provider=FakeProvider(),
+                    reasoning_effort="low",
+                    generation_config=GenerationConfig(reasoning_effort="low"),
+                )
+
 
 class GameRequestTests(unittest.TestCase):
     def test_quick_request_and_defaults(self):
