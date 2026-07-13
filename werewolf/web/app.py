@@ -108,12 +108,30 @@ def new_game():
             }},
         }), 500
 
+    try:
+        state = new_engine.get_state_dict()
+    except Exception:
+        try:
+            new_engine.close()
+        except Exception:
+            app.logger.exception("Failed to close unusable new game")
+        app.logger.exception("New game state could not be serialized")
+        return jsonify({
+            "error": "Game could not be created",
+            "errors": {"request": {
+                "code": "state_serialization_failed",
+                "message": "The new game state could not be serialized.",
+            }},
+        }), 500
+
     with _game_lock:
         old_engine = game_engine
         game_engine = new_engine
-        state = new_engine.get_state_dict()
-        if old_engine is not None:
+    if old_engine is not None:
+        try:
             old_engine.close()
+        except Exception:
+            app.logger.exception("Failed to close previous game")
     return jsonify({"game": state})
 
 

@@ -353,6 +353,32 @@ class WebApiTests(unittest.TestCase):
         old_engine.close.assert_called_once_with()
         self.webapp.game_engine = None
 
+    def test_state_serialization_failure_preserves_old_game_and_closes_new(self):
+        old_engine = mock.Mock()
+        new_engine = mock.Mock()
+        new_engine.get_state_dict.side_effect = RuntimeError("cannot serialize")
+        self.webapp.game_engine = old_engine
+        with mock.patch.object(self.webapp, "create_engine_from_payload", return_value=new_engine):
+            response = self.client.post("/api/new", json={"model": "fast"})
+        self.assertEqual(response.status_code, 500)
+        self.assertIs(self.webapp.game_engine, old_engine)
+        new_engine.close.assert_called_once_with()
+        old_engine.close.assert_not_called()
+        self.webapp.game_engine = None
+
+    def test_old_game_close_failure_does_not_invalidate_new_game(self):
+        old_engine = mock.Mock()
+        old_engine.close.side_effect = RuntimeError("close failed")
+        new_engine = mock.Mock()
+        new_engine.get_state_dict.return_value = {"game_id": "new"}
+        self.webapp.game_engine = old_engine
+        with mock.patch.object(self.webapp, "create_engine_from_payload", return_value=new_engine):
+            response = self.client.post("/api/new", json={"model": "fast"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIs(self.webapp.game_engine, new_engine)
+        old_engine.close.assert_called_once_with()
+        self.webapp.game_engine = None
+
 
 if __name__ == "__main__":
     unittest.main()
