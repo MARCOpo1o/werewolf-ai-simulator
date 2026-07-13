@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 from werewolf.engine.game import GameEngine
+from werewolf.engine.logging import JSONLLogger
 from werewolf.llm.fake_provider import FakeProvider, success_result
 from werewolf.llm.provider import GenerationConfig, ProviderResult
 from werewolf.llm.records import ErrorCategory
@@ -267,6 +268,47 @@ class EngineLifecycleTests(unittest.TestCase):
             engine.close()
             engine.close()
             self.assertTrue(engine.logger.file.closed)
+
+    def test_late_initialization_failure_closes_logger(self):
+        closed = []
+        original_close = JSONLLogger.close
+
+        def tracked_close(logger):
+            closed.append(logger)
+            original_close(logger)
+
+        with tempfile.TemporaryDirectory() as tmpdir, \
+             mock.patch("werewolf.engine.game.JSONLLogger.close", autospec=True, side_effect=tracked_close):
+            with mock.patch(
+                "werewolf.engine.game.JSONLLogger.log_config",
+                side_effect=RuntimeError("log failure"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "log failure"):
+                    GameEngine(
+                        n_players=4, n_wolves=1, n_seers=0, seed=4,
+                        output_dir=tmpdir, provider=FakeProvider(),
+                        transcript_enabled=False, belief_snapshots=False,
+                    )
+            self.assertEqual(len(closed), 1)
+            self.assertTrue(closed[0].file.closed)
+
+    def test_web_phase_completion_closes_logger_after_outcome(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = GameEngine(
+                n_players=4, n_wolves=1, n_seers=0, seed=4,
+                output_dir=tmpdir, provider=FakeProvider(),
+                transcript_enabled=False, belief_snapshots=False,
+            )
+            villagers = [p for p in engine.players.values() if p.team == "village"]
+            for player in villagers[:-1]:
+                player.alive = False
+            engine.state.round = 1
+            engine._phase_index = engine.PHASE_ORDER.index("day_announce")
+            result = engine.run_next_phase()
+            self.assertTrue(result["done"])
+            self.assertEqual(result["winner"], "wolf")
+            self.assertTrue(engine.logger.file.closed)
+            self.assertGreater(engine.ledger.game_summary()["calls"], -1)
 
     def test_role_assignment_logs_per_role_effective_generation(self):
         provider = FakeProvider(default=success_result({}))

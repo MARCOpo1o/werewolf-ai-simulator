@@ -200,39 +200,43 @@ class GameEngine:
             self.logger.close()
             self._closed = True
             raise
-        self.transcript = ConsoleTranscript(
-            show_all=show_all_channels,
-            enabled=transcript_enabled
-        )
+        try:
+            self.transcript = ConsoleTranscript(
+                show_all=show_all_channels,
+                enabled=transcript_enabled
+            )
 
-        self._phase_index = 0
-        self._pending_victim_id: Optional[int] = None
+            self._phase_index = 0
+            self._pending_victim_id: Optional[int] = None
 
-        self.logger.log_config({
-            "seed": seed,
-            "n_players": n_players,
-            "n_wolves": n_wolves,
-            "n_seers": n_seers,
-            "model": model,
-            "model_alias": model_alias,
-            "prompt_version": run_context["prompt_version"],
-            "batch_id": batch_id,
-            "trial_index": trial_index,
-            "belief_snapshots": belief_snapshots,
-            "belief_schema_version": BELIEF_SCHEMA_VERSION if belief_snapshots else None,
-            "generation_config": self.generation_config.to_json_dict(),
-            "requested_generation_config": self.requested_generation_config.to_json_dict(),
-            "requested_reasoning_override": self.reasoning_override,
-            "discussion_cycles": self.discussion_cycles,
-            "role_models": self.role_models_resolved,
-            "limits": limits_dict(),
-            "code_commit": get_code_commit(),
-            "game_id": self.state.game_id,
-            "role_map": {
-                str(pid): {"role": p.role, "team": p.team}
-                for pid, p in sorted(self.players.items())
-            },
-        })
+            self.logger.log_config({
+                "seed": seed,
+                "n_players": n_players,
+                "n_wolves": n_wolves,
+                "n_seers": n_seers,
+                "model": model,
+                "model_alias": model_alias,
+                "prompt_version": run_context["prompt_version"],
+                "batch_id": batch_id,
+                "trial_index": trial_index,
+                "belief_snapshots": belief_snapshots,
+                "belief_schema_version": BELIEF_SCHEMA_VERSION if belief_snapshots else None,
+                "generation_config": self.generation_config.to_json_dict(),
+                "requested_generation_config": self.requested_generation_config.to_json_dict(),
+                "requested_reasoning_override": self.reasoning_override,
+                "discussion_cycles": self.discussion_cycles,
+                "role_models": self.role_models_resolved,
+                "limits": limits_dict(),
+                "code_commit": get_code_commit(),
+                "game_id": self.state.game_id,
+                "role_map": {
+                    str(pid): {"role": p.role, "team": p.team}
+                    for pid, p in sorted(self.players.items())
+                },
+            })
+        except Exception:
+            self.close()
+            raise
 
     def _create_role_agents(
         self, role_models: dict, role_providers: dict,
@@ -333,6 +337,7 @@ class GameEngine:
     def run_next_phase(self) -> dict:
         """Run a single phase and return phase events. Used by web UI."""
         if self.state.winner is not None:
+            self.close()
             return {"done": True, "winner": self.state.winner}
         while True:
             event_start_idx = len(self.state.events)
@@ -395,6 +400,8 @@ class GameEngine:
                 continue
 
             phase_events = self.state.events[event_start_idx:]
+            if self.state.winner is not None:
+                self.close()
             return {
                 "done": self.state.winner is not None,
                 "winner": self.state.winner,
