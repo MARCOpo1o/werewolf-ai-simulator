@@ -30,11 +30,15 @@ class ModelSpec:
 # logged before this change were served by whatever the redirect chose;
 # compare eras via the resolved_model field, not the alias.
 MODEL_REGISTRY: dict[str, ModelSpec] = {
+    # NOTE: xai-sdk 1.17.0 client-side-validates reasoning_effort to
+    # ('low','high') - it cannot express the API's "none" level, so every
+    # call with "none" failed locally (all-fallback games). `fast` now
+    # omits the param (server default); revisit if the SDK adds "none".
     "fast": ModelSpec(
         alias="fast",
         provider="xai",
         model="grok-4.3",
-        reasoning_effort="none",
+        reasoning_effort=None,
     ),
     "reasoning": ModelSpec(
         alias="reasoning",
@@ -75,12 +79,19 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         model="anthropic/claude-sonnet-5",  # $2.00/$10.00 per 1M
         api_key_env=("ANTHROPIC_API_KEY",),
     ),
-    # OpenAI
-    "gpt_mini": ModelSpec(
-        alias="gpt_mini",
+    # OpenAI (per developers.openai.com/api/docs/models, 2026-07)
+    "gpt_nano": ModelSpec(
+        alias="gpt_nano",
         provider="litellm",
-        model="openai/gpt-4o-mini",  # $0.15/$0.60 per 1M
+        model="openai/gpt-5.4-nano-2026-03-17",  # $0.20/$1.25 per 1M, date-pinned
         api_key_env=("OPENAI_API_KEY",),
+    ),
+    "gpt_luna": ModelSpec(
+        alias="gpt_luna",
+        provider="litellm",
+        model="openai/gpt-5.6-luna",  # $1.00/$6.00 per 1M, reasoning model
+        api_key_env=("OPENAI_API_KEY",),
+        reasoning_effort="low",  # cap thinking cost, as with gemini_flash
     ),
 }
 

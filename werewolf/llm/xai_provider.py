@@ -85,11 +85,14 @@ def build_chat_kwargs(request: ModelRequest) -> dict:
     return kwargs
 
 
-def _unexpected_kwarg_name(exc: TypeError, kwargs: dict):
-    """Extract the offending kwarg from a TypeError, if identifiable."""
-    text = str(exc)
+def _unexpected_kwarg_name(exc: Exception, kwargs: dict):
+    """Extract the offending kwarg from a TypeError/ValueError, if
+    identifiable (matches quoted names, raw names, or names with spaces:
+    'Invalid reasoning effort: ...' -> reasoning_effort)."""
+    text = str(exc).lower()
     for name in kwargs:
-        if f"'{name}'" in text:
+        candidates = (f"'{name}'", name, name.replace("_", " "))
+        if any(c in text for c in candidates):
             return name
     return None
 
@@ -144,21 +147,24 @@ class XAIProvider:
             )
 
     def _create_chat(self, request: ModelRequest):
-        """chat.create with the requested GenerationConfig. Params the
-        installed xai-sdk doesn't accept are dropped one at a time (with a
-        warning) and reported back - never silently ignored."""
+        """chat.create with the requested GenerationConfig. Params (or
+        param VALUES) the installed xai-sdk rejects are dropped one at a
+        time (with a warning) and reported back - never silently ignored.
+        TypeError = unknown kwarg; ValueError = client-side value
+        validation (e.g. sdk 1.17.0 only accepts reasoning_effort
+        'low'/'high')."""
         kwargs = build_chat_kwargs(request)
         dropped: list[str] = []
         while True:
             try:
                 return self._client.chat.create(**kwargs), dropped
-            except TypeError as exc:
+            except (TypeError, ValueError) as exc:
                 offender = _unexpected_kwarg_name(exc, kwargs)
                 if offender is None or offender == "model":
                     raise
                 logger.warning(
-                    "xai-sdk does not accept %s=%r; dropping",
-                    offender, kwargs[offender],
+                    "xai-sdk rejected %s=%r (%s); dropping",
+                    offender, kwargs[offender], exc,
                 )
                 kwargs.pop(offender)
                 dropped.append(offender)

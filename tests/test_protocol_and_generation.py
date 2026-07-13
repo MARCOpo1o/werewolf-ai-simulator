@@ -163,6 +163,23 @@ class GenerationConfigTests(unittest.TestCase):
         ))
         self.assertEqual(bare, {"model": "grok-4.3"})
 
+    def test_invalid_param_value_is_identified_for_dropping(self):
+        # xai-sdk 1.17.0 raises ValueError('Invalid reasoning effort: none.
+        # Must be one of: (\'low\', \'high\')') - the provider must identify
+        # reasoning_effort as the offender so it can drop + report it
+        # instead of failing every call.
+        from werewolf.llm.xai_provider import _unexpected_kwarg_name
+        exc = ValueError(
+            "Invalid reasoning effort: none. Must be one of: ('low', 'high')"
+        )
+        kwargs = {"model": "grok-4.3", "reasoning_effort": "none",
+                  "temperature": 0.0}
+        self.assertEqual(_unexpected_kwarg_name(exc, kwargs), "reasoning_effort")
+        # unidentifiable errors are not blamed on a param
+        self.assertIsNone(_unexpected_kwarg_name(
+            ValueError("something else entirely"), {"temperature": 0.0}
+        ))
+
     def test_litellm_kwargs_mapping(self):
         try:
             from werewolf.llm.litellm_provider import build_completion_kwargs

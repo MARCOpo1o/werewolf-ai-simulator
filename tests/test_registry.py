@@ -14,10 +14,10 @@ from werewolf.llm.registry import (
 
 class ResolveTests(unittest.TestCase):
     def test_aliases_point_at_current_models(self):
-        # Deliberately updated 2026-07: grok-4-1-fast* retired 2026-05-15;
-        # aliases now target grok-4.3 with explicit reasoning effort.
+        # fast omits reasoning_effort: xai-sdk 1.17.0 only accepts
+        # 'low'/'high' client-side, so "none" broke every call.
         self.assertEqual(resolve("fast").model, "grok-4.3")
-        self.assertEqual(resolve("fast").reasoning_effort, "none")
+        self.assertIsNone(resolve("fast").reasoning_effort)
         self.assertEqual(resolve("reasoning").model, "grok-4.3")
         self.assertEqual(resolve("reasoning").reasoning_effort, "low")
         self.assertEqual(resolve("fast").provider, "xai")
@@ -43,7 +43,9 @@ class ResolveTests(unittest.TestCase):
                              ("ANTHROPIC_API_KEY",)),
             "claude_sonnet": ("anthropic/claude-sonnet-5",
                               ("ANTHROPIC_API_KEY",)),
-            "gpt_mini": ("openai/gpt-4o-mini", ("OPENAI_API_KEY",)),
+            "gpt_nano": ("openai/gpt-5.4-nano-2026-03-17",
+                         ("OPENAI_API_KEY",)),
+            "gpt_luna": ("openai/gpt-5.6-luna", ("OPENAI_API_KEY",)),
         }
         for alias, (model, key_env) in cases.items():
             spec = resolve(alias)
