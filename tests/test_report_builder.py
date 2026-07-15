@@ -167,6 +167,18 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertEqual(report["overview"]["analysis_eligibility"], "limited")
         self.assertTrue(report["overview"]["validity"]["provisional"])
 
+    def test_filename_game_id_is_canonical_when_config_disagrees(self):
+        rows = fixture_rows("game_wrong_config")
+        path = self.write(rows, game_id="game_17_canonical")
+        report = build_full_report_from_file(path)
+        self.assertEqual(report["overview"]["game_id"], "game_17_canonical")
+        self.assertEqual(
+            report["links"]["report"], "/games/game_17_canonical",
+        )
+        warnings = report["source"]["warnings"]
+        self.assertTrue(any(w["code"] == "game_id_mismatch" for w in warnings))
+        self.assertEqual(report["overview"]["integrity_status"], "warnings")
+
 
 if __name__ == "__main__":
     unittest.main()

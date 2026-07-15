@@ -5,7 +5,11 @@ import copy
 import json
 from typing import Optional
 
-from werewolf.reporting.builder import REPORT_SCHEMA_VERSION, build_full_report_from_file
+from werewolf.reporting.builder import (
+    REPORT_BUILD_VERSION,
+    REPORT_SCHEMA_VERSION,
+    build_full_report_from_file,
+)
 from werewolf.reporting.repository import GameRepository, atomic_json_write
 
 
@@ -26,6 +30,7 @@ def load_full_report(
         source = candidate.get("source") or {}
         if (
             candidate.get("report_schema_version") == REPORT_SCHEMA_VERSION
+            and candidate.get("report_build_version") == REPORT_BUILD_VERSION
             and source.get("size_bytes") == entry.get("source_size")
             and source.get("mtime_ns") == entry.get("source_mtime_ns")
         ):
@@ -35,7 +40,7 @@ def load_full_report(
 
     if report is None:
         report = build_full_report_from_file(
-            repository.log_path(game_id), metadata=entry,
+            repository.log_path(game_id), metadata={**entry, "game_id": game_id},
         )
         atomic_json_write(report_path, report)
     repository.update_from_report(game_id, report)

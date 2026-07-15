@@ -27,7 +27,8 @@ _EVENT_FIELDS = (
 _REPRO_FIELDS = (
     "code_commit", "prompt_version", "log_schema_version",
     "event_schema_version", "belief_schema_version", "validity_policy_version",
-    "runtime", "report_schema_version", "analysis_eligibility_policy_version",
+    "runtime", "report_schema_version", "report_build_version",
+    "analysis_eligibility_policy_version",
 )
 
 
@@ -56,6 +57,7 @@ def build_public_report(full_report: dict) -> dict:
     source = full_report.get("source") or {}
     return {
         "report_schema_version": full_report.get("report_schema_version"),
+        "report_build_version": full_report.get("report_build_version"),
         "privacy": {
             "include_private": False,
             "spoiler_protection_only": True,

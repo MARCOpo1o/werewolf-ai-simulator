@@ -118,6 +118,16 @@ def parse_game_log(path: str | Path) -> ParsedGameLog:
         parsed.warnings.append(ParseWarning(
             "missing_config", "No canonical config record was found",
         ))
+    else:
+        configured_id = parsed.config.get("game_id")
+        if configured_id and configured_id != path.stem:
+            parsed.warnings.append(ParseWarning(
+                "game_id_mismatch",
+                (
+                    f"Config game_id {configured_id!r} does not match "
+                    f"canonical filename game_id {path.stem!r}"
+                ),
+            ))
     return parsed
 
 

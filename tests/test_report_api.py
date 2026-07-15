@@ -175,6 +175,23 @@ class ReportApiTests(unittest.TestCase):
         self.assertEqual(second["overview"]["completion_status"], "completed")
         self.assertEqual(second["overview"]["winner"], "wolf")
 
+    def test_report_cache_invalidates_when_build_version_changes(self):
+        first = self.client.get(
+            f"/api/games/{self.game_id}/report?include_private=true"
+        ).get_json()
+        report_path = web_app.game_repository.report_path(self.game_id)
+        with open(report_path, encoding="utf-8") as handle:
+            cached = json.load(handle)
+        cached["report_build_version"] = -1
+        cached["overview"]["winner"] = "stale-winner"
+        with open(report_path, "w", encoding="utf-8") as handle:
+            json.dump(cached, handle)
+        second = self.client.get(
+            f"/api/games/{self.game_id}/report?include_private=true"
+        ).get_json()
+        self.assertEqual(second["report_build_version"], first["report_build_version"])
+        self.assertIsNone(second["overview"]["winner"])
+
     def test_invalid_paths_and_query_are_rejected(self):
         self.assertEqual(
             self.client.get("/api/games/not-a-game/report").status_code, 404

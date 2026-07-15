@@ -16,6 +16,7 @@ from werewolf.reporting.usage import compare_terminal_summary, compute_usage
 
 
 REPORT_SCHEMA_VERSION = 1
+REPORT_BUILD_VERSION = 2
 ANALYSIS_ELIGIBILITY_POLICY_VERSION = 1
 _AGENT_EVENT_TYPES = {
     "thought", "message", "vote", "belief_snapshot", "divine_result",
@@ -84,7 +85,9 @@ def build_full_report(
     metadata = metadata or {}
     config = parsed.config or {}
     outcome = parsed.outcome
-    game_id = config.get("game_id") or parsed.path.stem
+    # The validated filename/route ID is canonical. A conflicting config ID is
+    # preserved as a parser warning but must never redirect report links.
+    game_id = metadata.get("game_id") or parsed.path.stem
     completion = "completed" if outcome else "incomplete"
     display_status = "active" if active_game_id == game_id else completion
 
@@ -213,6 +216,7 @@ def build_full_report(
     manipulation = build_manipulation_signals(config, timeline, beliefs)
     return {
         "report_schema_version": REPORT_SCHEMA_VERSION,
+        "report_build_version": REPORT_BUILD_VERSION,
         "source": {
             "log_name": parsed.path.name,
             "sha256": parsed.sha256,
@@ -246,6 +250,7 @@ def build_full_report(
             "validity_policy_version": validity.get("policy_version"),
             "runtime": config.get("runtime"),
             "report_schema_version": REPORT_SCHEMA_VERSION,
+            "report_build_version": REPORT_BUILD_VERSION,
             "analysis_eligibility_policy_version": (
                 ANALYSIS_ELIGIBILITY_POLICY_VERSION
             ),
@@ -254,6 +259,43 @@ def build_full_report(
             "raw": f"/api/games/{game_id}/raw",
             "report": f"/games/{game_id}",
         },
+    }
+
+
+def build_history_summary(report: dict) -> dict:
+    """Return history fields from the canonical full-report semantics.
+
+    Repository indexing and report pages must not independently reinterpret
+    validity, strategic eligibility, usage, or cost.
+    """
+    overview = report.get("overview") or {}
+    usage = report.get("usage") or overview.get("usage") or {}
+    source = report.get("source") or {}
+    requested = overview.get("requested_models") or {}
+    models = sorted({
+        info.get("alias") or info.get("requested_model") or info.get("model")
+        for info in requested.values() if isinstance(info, dict)
+    } - {None})
+    return {
+        "game_id": overview.get("game_id"),
+        "completion_status": overview.get("completion_status"),
+        "integrity_status": overview.get("integrity_status"),
+        "analysis_eligibility": overview.get("analysis_eligibility"),
+        "analysis_exclusion_reasons": list(
+            overview.get("analysis_exclusion_reasons") or []
+        ),
+        "usage_reliability": overview.get("usage_reliability"),
+        "winner": overview.get("winner"),
+        "rounds": overview.get("rounds"),
+        "seed": overview.get("seed"),
+        "n_players": overview.get("n_players"),
+        "models": models,
+        "known_cost_usd": usage.get("known_cost_usd"),
+        "cost_completeness": usage.get("cost_completeness"),
+        "warning_count": len(source.get("warnings") or []),
+        "record_count": sum((source.get("record_counts") or {}).values()),
+        "report_schema_version": report.get("report_schema_version"),
+        "report_build_version": report.get("report_build_version"),
     }
 
 
@@ -267,6 +309,7 @@ def build_full_report_from_file(
 
 
 __all__ = [
-    "ANALYSIS_ELIGIBILITY_POLICY_VERSION", "REPORT_SCHEMA_VERSION",
-    "build_full_report", "build_full_report_from_file",
+    "ANALYSIS_ELIGIBILITY_POLICY_VERSION", "REPORT_BUILD_VERSION",
+    "REPORT_SCHEMA_VERSION", "build_full_report", "build_full_report_from_file",
+    "build_history_summary",
 ]
