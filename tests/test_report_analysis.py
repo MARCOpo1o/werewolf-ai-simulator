@@ -19,11 +19,11 @@ CONFIG = {
 
 def snapshot(
     event_id, player, checkpoint, probs, *, suspicion=None, influential=None,
-    valid=True,
+    valid=True, round_=1,
 ):
     return {
         "id": event_id, "event_id": f"evt_{event_id:06d}",
-        "source_line": event_id + 2, "round": 1, "phase": "day_assess",
+        "source_line": event_id + 2, "round": round_, "phase": "day_assess",
         "type": "belief_snapshot", "channel": "moderator_only",
         "speaker_id": player, "source_call_id": f"call-{event_id}",
         "discussion_cycle": None,
@@ -117,6 +117,25 @@ class BeliefReportTests(unittest.TestCase):
         ]
         self.assertTrue(retained)
         self.assertTrue(all(not item["snapshot_valid"] for item in retained))
+
+    def test_checkpoint_records_preserve_missing_and_empty_observations(self):
+        timeline = [
+            snapshot(20, 0, "pre_discussion", {1: 0.2, 2: 0.8}),
+            snapshot(21, 0, "post_discussion", {}, valid=False),
+            snapshot(22, 0, "pre_discussion", {1: 0.4, 2: 0.6}, round_=2),
+        ]
+        beliefs = build_belief_analysis(CONFIG, timeline)
+        records = {
+            (item["round"], item["checkpoint"]): item
+            for item in beliefs["checkpoints"]
+        }
+        self.assertEqual(records[(1, "pre_discussion")]["status"], "valid")
+        self.assertEqual(records[(1, "post_discussion")]["status"], "invalid")
+        self.assertEqual(
+            records[(1, "post_discussion")]["event_id"], "evt_000021",
+        )
+        self.assertEqual(records[(2, "post_discussion")]["status"], "missing")
+        self.assertIsNone(records[(2, "post_discussion")]["event_id"])
 
     def test_manipulation_signals_are_noncausal_and_source_only(self):
         timeline = belief_timeline()

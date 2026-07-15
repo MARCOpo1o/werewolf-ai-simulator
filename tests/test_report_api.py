@@ -262,6 +262,8 @@ class ReportApiTests(unittest.TestCase):
         self.assertIn("flushSegment", javascript)
         self.assertIn("point.snapshot_valid ? 'valid' : 'invalid'", javascript)
         self.assertIn("item.evidence_quality", javascript)
+        self.assertIn("beliefs.checkpoints || []", javascript)
+        self.assertIn("checkpoint-marker", javascript)
 
 
 if __name__ == "__main__":

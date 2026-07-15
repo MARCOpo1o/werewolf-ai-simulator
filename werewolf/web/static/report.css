@@ -65,6 +65,7 @@ td.numeric { font-variant-numeric:tabular-nums; }
 .belief-chart svg { width:100%; min-width:650px; height:330px; }
 .chart-axis { stroke:#4b607d; stroke-width:1; }.chart-grid { stroke:#253750; stroke-width:1; }.chart-label { fill:#91a4be; font-size:11px; }.chart-legend { fill:#dce7f5; font-size:11px; }
 .chart-point.valid { stroke-width:1.5; }.chart-point.invalid { stroke-width:3; stroke-dasharray:2 2; }
+.checkpoint-marker.missing { fill:#64748b; }.checkpoint-marker.invalid { fill:#fb7185; }.checkpoint-marker.partial { fill:#fbbf24; }
 .empty-state { padding:1.5rem; border:1px dashed #405574; border-radius:.7rem; color:var(--muted); text-align:center; }
 .episode-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:.7rem; }
 .episode { border:1px solid var(--border); border-radius:.55rem; padding:.75rem; background:var(--surface2); }

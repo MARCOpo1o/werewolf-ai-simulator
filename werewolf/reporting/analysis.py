@@ -58,6 +58,7 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
             "available": False,
             "reason": "belief_snapshots_unavailable",
             "coverage": {},
+            "checkpoints": [],
             "trajectories": [],
             "changes": [],
             "revisions": [],
@@ -107,9 +108,37 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
                 "snapshot_valid": bool(payload.get("valid")),
             })
 
+    rounds_observers = sorted({(round_, observer) for round_, observer, _ in snapshots})
+    checkpoints = []
+    for round_, observer in rounds_observers:
+        for checkpoint in (CHECKPOINT_PRE, CHECKPOINT_POST):
+            event = snapshots.get((round_, observer, checkpoint))
+            if event is None:
+                checkpoints.append({
+                    "round": round_, "observer_id": observer,
+                    "checkpoint": checkpoint, "status": "missing",
+                    "event_id": None, "source_line": None,
+                    "usable_probability_count": 0,
+                })
+                continue
+            payload = as_mapping(event.get("payload"))
+            usable_count = len(_probabilities(payload))
+            if payload.get("valid") and usable_count:
+                status = "valid"
+            elif usable_count:
+                status = "partial"
+            else:
+                status = "invalid"
+            checkpoints.append({
+                "round": round_, "observer_id": observer,
+                "checkpoint": checkpoint, "status": status,
+                "event_id": event.get("event_id"),
+                "source_line": event.get("source_line"),
+                "usable_probability_count": usable_count,
+            })
+
     changes = []
     revisions = []
-    rounds_observers = sorted({(round_, observer) for round_, observer, _ in snapshots})
     for round_, observer in rounds_observers:
         pre_event = snapshots.get((round_, observer, CHECKPOINT_PRE))
         post_event = snapshots.get((round_, observer, CHECKPOINT_POST))
@@ -195,6 +224,7 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
         "available": True,
         "belief_schema_version": config.get("belief_schema_version"),
         "coverage": dict(coverage),
+        "checkpoints": checkpoints,
         "trajectories": trajectories,
         "changes": changes,
         "revisions": revisions,

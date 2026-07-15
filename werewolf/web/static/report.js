@@ -199,13 +199,17 @@ function svgNode(tag, attributes = {}) {
     return node;
 }
 
-function renderBeliefChart(trajectories, observer) {
+function renderBeliefChart(trajectories, checkpoints, observer) {
     const container = document.getElementById('belief-chart');
     container.replaceChildren();
     const points = trajectories.filter(item => item.observer_id === observer);
-    if (!points.length) { container.append(el('div', 'No valid probabilities for this observer.', 'empty-state')); return; }
+    const checkpointRows = checkpoints.filter(item => item.observer_id === observer);
+    if (!points.length && !checkpointRows.length) { container.append(el('div', 'No checkpoint evidence for this observer.', 'empty-state')); return; }
     const checkpointOrder = { pre_discussion: 0, post_discussion: 1 };
-    const keys = [...new Set(points.map(item => `${item.round}:${item.checkpoint}`))].sort((a, b) => {
+    const keys = [...new Set([
+        ...checkpointRows.map(item => `${item.round}:${item.checkpoint}`),
+        ...points.map(item => `${item.round}:${item.checkpoint}`),
+    ])].sort((a, b) => {
         const [ar, ac] = a.split(':'); const [br, bc] = b.split(':');
         return Number(ar) - Number(br) || (checkpointOrder[ac] ?? 9) - (checkpointOrder[bc] ?? 9);
     });
@@ -220,6 +224,18 @@ function renderBeliefChart(trajectories, observer) {
         const label = svgNode('text', { x: left - 9, y: yy + 4, 'text-anchor': 'end', class: 'chart-label' }); label.textContent = `${Math.round(value * 100)}%`; svg.append(label);
     }
     keys.forEach((key, index) => { const [round, checkpoint] = key.split(':'); const label = svgNode('text', { x: x(index), y: height - 27, 'text-anchor': 'middle', class: 'chart-label' }); label.textContent = `R${round} ${checkpoint === 'pre_discussion' ? 'pre' : 'post'}`; svg.append(label); });
+    const checkpointLookup = new Map(checkpointRows.map(item => [`${item.round}:${item.checkpoint}`, item]));
+    keys.forEach((key, index) => {
+        const checkpoint = checkpointLookup.get(key);
+        if (!checkpoint || checkpoint.status === 'valid') return;
+        const marker = svgNode('rect', {
+            x: x(index) - 5, y: height - bottom + 7, width: 10, height: 10,
+            class: `checkpoint-marker ${checkpoint.status}`,
+        });
+        const title = svgNode('title');
+        title.textContent = `${checkpoint.status} checkpoint`;
+        marker.append(title); svg.append(marker);
+    });
     const colors = ['#60a5fa', '#f87171', '#34d399', '#c084fc', '#fbbf24', '#22d3ee', '#fb7185'];
     const targets = [...new Set(points.map(item => item.target_id))].sort((a, b) => a - b);
     targets.forEach((target, targetIndex) => {
@@ -266,7 +282,16 @@ function renderBeliefs(report) {
     observerSelect.replaceChildren(...observers.map(id => new Option(playerLabel(id), String(id))));
     const renderObserver = () => {
         const observer = Number(observerSelect.value);
-        renderBeliefChart(beliefs.trajectories || [], observer);
+        renderBeliefChart(
+            beliefs.trajectories || [], beliefs.checkpoints || [], observer,
+        );
+        const checkpointRows = document.getElementById('belief-checkpoint-rows');
+        checkpointRows.replaceChildren();
+        for (const item of (beliefs.checkpoints || []).filter(row => row.observer_id === observer)) {
+            const row = el('tr');
+            [item.round, playerLabel(item.observer_id), item.checkpoint, item.status, item.usable_probability_count, item.event_id || 'Not emitted'].forEach(value => row.append(el('td', fmt.value(value))));
+            checkpointRows.append(row);
+        }
         const changes = document.getElementById('belief-change-rows'); changes.replaceChildren();
         for (const item of (beliefs.changes || []).filter(change => change.observer_id === observer)) {
             const row = el('tr');
