@@ -61,7 +61,7 @@ def _utc_iso(value: Any) -> Optional[str]:
         return None
 
 
-def _atomic_json_write(path: Path, payload: dict) -> None:
+def atomic_json_write(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
@@ -238,7 +238,7 @@ class GameRepository:
         )
 
     def _write_index(self) -> None:
-        _atomic_json_write(self.index_path, {
+        atomic_json_write(self.index_path, {
             "index_schema_version": INDEX_SCHEMA_VERSION,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "games": self._sorted_entries(),
@@ -358,11 +358,42 @@ class GameRepository:
             "source_size": stat.st_size,
             "source_mtime_ns": stat.st_mtime_ns,
         }
-        _atomic_json_write(self.meta_path(game_id), entry)
+        atomic_json_write(self.meta_path(game_id), entry)
         return entry
+
+    def update_from_report(self, game_id: str, report: dict) -> None:
+        """Copy report headline fields into the derived history metadata."""
+        with self._lock:
+            self.ensure_reconciled()
+            entry = self._entries.get(validate_game_id(game_id))
+            if entry is None:
+                return
+            overview = report.get("overview") or {}
+            source = report.get("source") or {}
+            entry.update({
+                "completion_status": overview.get(
+                    "completion_status", entry["completion_status"]
+                ),
+                "integrity_status": overview.get(
+                    "integrity_status", entry["integrity_status"]
+                ),
+                "analysis_eligibility": overview.get(
+                    "analysis_eligibility", entry["analysis_eligibility"]
+                ),
+                "analysis_exclusion_reasons": overview.get(
+                    "analysis_exclusion_reasons", []
+                ),
+                "known_cost_usd": (overview.get("usage") or {}).get(
+                    "known_cost_usd"
+                ),
+                "warning_count": len(source.get("warnings") or []),
+            })
+            atomic_json_write(self.meta_path(game_id), entry)
+            self._write_index()
 
 
 __all__ = [
     "GameRepository", "InvalidCursor", "InvalidGameId",
-    "INDEX_SCHEMA_VERSION", "META_SCHEMA_VERSION", "validate_game_id",
+    "INDEX_SCHEMA_VERSION", "META_SCHEMA_VERSION", "atomic_json_write",
+    "validate_game_id",
 ]
