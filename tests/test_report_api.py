@@ -263,6 +263,10 @@ class ReportApiTests(unittest.TestCase):
         self.assertIn("point.snapshot_valid ? 'valid' : 'invalid'", javascript)
         self.assertIn("item.evidence_quality", javascript)
         self.assertIn("beliefs.checkpoints || []", javascript)
+        self.assertIn(
+            "...(beliefs.checkpoints || []).map(item => item.observer_id)",
+            javascript,
+        )
         self.assertIn("checkpoint-marker", javascript)
 
 

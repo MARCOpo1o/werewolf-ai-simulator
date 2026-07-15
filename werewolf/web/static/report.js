@@ -281,7 +281,10 @@ function renderBeliefs(report) {
         unavailable.classList.remove('hidden'); content.classList.add('hidden'); observerSelect.classList.add('hidden'); return;
     }
     unavailable.classList.add('hidden'); content.classList.remove('hidden'); observerSelect.classList.remove('hidden');
-    const observers = [...new Set((beliefs.trajectories || []).map(item => item.observer_id))].sort((a, b) => a - b);
+    const observers = [...new Set([
+        ...(beliefs.trajectories || []).map(item => item.observer_id),
+        ...(beliefs.checkpoints || []).map(item => item.observer_id),
+    ])].sort((a, b) => a - b);
     observerSelect.replaceChildren(...observers.map(id => new Option(playerLabel(id), String(id))));
     const renderObserver = () => {
         const observer = Number(observerSelect.value);
