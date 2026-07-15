@@ -179,6 +179,53 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertTrue(any(w["code"] == "game_id_mismatch" for w in warnings))
         self.assertEqual(report["overview"]["integrity_status"], "warnings")
 
+    def test_structurally_damaged_nested_records_warn_without_crashing(self):
+        game_id = "game_18_nested_damage"
+        rows = [
+            {
+                "type": "config", "game_id": game_id,
+                "event_schema_version": 2, "role_map": [], "role_models": [],
+            },
+            {
+                "type": "llm_call", "call_id": ["broken"], "attempt": [],
+                "api_attempted": True, "usage": "broken", "cost": [],
+                "requested_model": ["bad"], "resolved_model": ["bad"],
+            },
+            {
+                "type": "llm_call", "call_id": "call-negative", "attempt": 1,
+                "api_attempted": True, "usage": {"total_tokens": -3},
+                "cost": {"source": "provider_reported", "usd": -1.0},
+                "requested_model": "model", "resolved_model": "model",
+            },
+            {"type": "event", "event": {
+                "id": 0, "event_id": "evt_000000", "round": 1,
+                "phase": "day_discuss", "type": "message", "channel": "public",
+                "speaker_id": 0, "source_call_id": ["broken"], "payload": [],
+            }},
+            {"type": "usage_summary", "usage": {
+                "calls": 2, "tokens": {"total_tokens": -1},
+                "cost_usd_total": -2.0,
+            }},
+            {"type": "outcome", "winner": "wolf", "rounds": 1},
+        ]
+        report = build_full_report_from_file(self.write(rows, game_id=game_id))
+        codes = {warning["code"] for warning in report["source"]["warnings"]}
+        self.assertTrue({
+            "malformed_role_map", "malformed_role_models",
+            "malformed_llm_usage", "malformed_llm_cost",
+            "invalid_llm_tokens", "invalid_llm_cost",
+            "malformed_event_payload", "invalid_terminal_tokens",
+            "invalid_terminal_cost",
+        } <= codes)
+        self.assertEqual(report["overview"]["integrity_status"], "warnings")
+        self.assertEqual(report["usage"]["attempts"], 2)
+        self.assertIsNone(report["usage"]["known_cost_usd"])
+        self.assertEqual(report["usage"]["calls_without_known_cost"], 2)
+        self.assertEqual(report["usage"]["tokens"]["total_tokens"], 0)
+        self.assertEqual(
+            report["usage"]["terminal_consistency"]["status"], "mismatched",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

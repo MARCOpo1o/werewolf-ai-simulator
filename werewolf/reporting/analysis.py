@@ -9,11 +9,12 @@ from werewolf.engine.beliefs import (
     CHECKPOINT_POST,
     CHECKPOINT_PRE,
 )
+from werewolf.json_safety import as_mapping
 
 
 def _role_sets(config: dict) -> tuple[set[int], set[int], dict[int, dict]]:
     roles = {}
-    for raw_id, info in (config.get("role_map") or {}).items():
+    for raw_id, info in as_mapping(config.get("role_map")).items():
         if not isinstance(info, dict):
             continue
         try:
@@ -27,7 +28,9 @@ def _role_sets(config: dict) -> tuple[set[int], set[int], dict[int, dict]]:
 
 def _probabilities(payload: dict) -> dict[int, float]:
     values = {}
-    for raw_id, raw_probability in (payload.get("wolf_probabilities") or {}).items():
+    for raw_id, raw_probability in as_mapping(
+        payload.get("wolf_probabilities")
+    ).items():
         try:
             player_id = int(raw_id)
             probability = float(raw_probability)
@@ -64,14 +67,22 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
     coverage = defaultdict(lambda: {"emitted": 0, "valid": 0})
     trajectories = []
     for event in snapshot_events:
-        payload = event.get("payload") or {}
+        payload = as_mapping(event.get("payload"))
         checkpoint = payload.get("checkpoint")
+        checkpoint = checkpoint if isinstance(checkpoint, str) else None
         observer = event.get("speaker_id")
-        coverage[checkpoint]["emitted"] += 1
+        round_number = event.get("round")
+        coverage[checkpoint or "unknown"]["emitted"] += 1
         if payload.get("valid"):
-            coverage[checkpoint]["valid"] += 1
-        if checkpoint in (CHECKPOINT_PRE, CHECKPOINT_POST):
-            snapshots[(event.get("round"), observer, checkpoint)] = event
+            coverage[checkpoint or "unknown"]["valid"] += 1
+        addressable = (
+            isinstance(round_number, int) and not isinstance(round_number, bool)
+            and isinstance(observer, int) and not isinstance(observer, bool)
+        )
+        if checkpoint in (CHECKPOINT_PRE, CHECKPOINT_POST) and addressable:
+            snapshots[(round_number, observer, checkpoint)] = event
+        if not addressable:
+            continue
         schema_valid = payload.get("schema_version") == BELIEF_SCHEMA_VERSION
         for target, probability in _probabilities(payload).items():
             actual = target in wolves if wolves else None
@@ -82,7 +93,7 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
             trajectories.append({
                 "observer_id": observer,
                 "target_id": target,
-                "round": event.get("round"),
+                "round": round_number,
                 "checkpoint": checkpoint,
                 "event_id": event.get("event_id"),
                 "source_line": event.get("source_line"),
@@ -104,8 +115,8 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
         post_event = snapshots.get((round_, observer, CHECKPOINT_POST))
         if not pre_event or not post_event:
             continue
-        pre_payload = pre_event.get("payload") or {}
-        post_payload = post_event.get("payload") or {}
+        pre_payload = as_mapping(pre_event.get("payload"))
+        post_payload = as_mapping(post_event.get("payload"))
         pre_valid = bool(pre_payload.get("valid"))
         post_valid = bool(post_payload.get("valid"))
         evidence_quality = "valid" if pre_valid and post_valid else "partial"
@@ -165,7 +176,7 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
     for event in timeline:
         if event.get("type") != "vote":
             continue
-        payload = event.get("payload") or {}
+        payload = as_mapping(event.get("payload"))
         if payload.get("vote_stage") == "runoff":
             continue
         key = (event.get("round"), payload.get("voter_id"))
@@ -213,14 +224,14 @@ def _event_actions(event: dict) -> Optional[set[str]]:
     if event_type == "message":
         return {"wolf_chat"} if event.get("channel") == "werewolf" else {"speak_public"}
     if event_type == "vote":
-        stage = (event.get("payload") or {}).get("vote_stage")
+        stage = as_mapping(event.get("payload")).get("vote_stage")
         if stage == "main":
             return {"vote"}
         if stage == "runoff":
             return {"runoff_vote"}
         return {"vote", "runoff_vote"}
     if event_type == "belief_snapshot":
-        checkpoint = (event.get("payload") or {}).get("checkpoint")
+        checkpoint = as_mapping(event.get("payload")).get("checkpoint")
         return {"assess_beliefs"} if checkpoint == CHECKPOINT_PRE else {"vote"}
     if event_type == "divine_result":
         return {"seer_divine"}
@@ -234,10 +245,13 @@ def build_decision_analysis(
 ) -> dict:
     calls_by_id = defaultdict(list)
     for call in llm_calls:
-        if call.get("call_id"):
+        if isinstance(call.get("call_id"), str) and call.get("call_id"):
             calls_by_id[call["call_id"]].append(call)
     for attempts in calls_by_id.values():
-        attempts.sort(key=lambda call: (call.get("attempt") or 0, call["source_line"]))
+        attempts.sort(key=lambda call: (
+            call.get("attempt") if isinstance(call.get("attempt"), int) else 0,
+            call["source_line"],
+        ))
 
     if legacy_inference:
         for event in timeline:
@@ -255,7 +269,11 @@ def build_decision_analysis(
                     continue
                 if first.get("phase") != event.get("phase"):
                     continue
-                if actions is not None and first.get("required_action") not in actions:
+                required_action = first.get("required_action")
+                if actions is not None and (
+                    not isinstance(required_action, str)
+                    or required_action not in actions
+                ):
                     continue
                 if first.get("source_line", 0) > event.get("source_line", 0):
                     continue
@@ -291,11 +309,15 @@ def build_decision_analysis(
                 call.get("validation_ok") is False for call in attempts
             ),
             "parse_methods": sorted({
-                call.get("parse_method") for call in attempts if call.get("parse_method")
+                call.get("parse_method") for call in attempts
+                if isinstance(call.get("parse_method"), str)
+                and call.get("parse_method")
             }),
             "requested_model": first.get("requested_model"),
             "resolved_models": sorted({
-                call.get("resolved_model") for call in attempts if call.get("resolved_model")
+                call.get("resolved_model") for call in attempts
+                if isinstance(call.get("resolved_model"), str)
+                and call.get("resolved_model")
             }),
             "final_error_category": last.get("error_category"),
             "attempts": attempts,
@@ -337,12 +359,19 @@ def build_manipulation_signals(
         if event.get("type") != "message" or event.get("channel") != "public":
             continue
         speaker = event.get("speaker_id")
-        messages_by_round[event.get("round")].append({
+        round_number = event.get("round")
+        if not isinstance(round_number, int) or isinstance(round_number, bool):
+            continue
+        speaker = (
+            speaker if isinstance(speaker, int) and not isinstance(speaker, bool)
+            else None
+        )
+        messages_by_round[round_number].append({
             "event_id": event.get("event_id"),
             "speaker_id": speaker,
             "speaker_role": (roles.get(speaker) or {}).get("role"),
             "discussion_cycle": event.get("discussion_cycle"),
-            "text": (event.get("payload") or {}).get("text"),
+            "text": as_mapping(event.get("payload")).get("text"),
         })
 
     suspicion_changes = []
@@ -369,11 +398,13 @@ def build_manipulation_signals(
     for event in timeline:
         if event.get("type") != "belief_snapshot" or event.get("speaker_id") not in wolves:
             continue
-        payload = event.get("payload") or {}
+        payload = as_mapping(event.get("payload"))
         if not payload.get("valid"):
             continue
         checkpoint = payload.get("checkpoint")
-        for raw_observer, estimate in (payload.get("estimated_suspicion_of_me") or {}).items():
+        for raw_observer, estimate in as_mapping(
+            payload.get("estimated_suspicion_of_me")
+        ).items():
             try:
                 observer = int(raw_observer)
                 estimate = float(estimate)

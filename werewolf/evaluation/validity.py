@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 
+from werewolf.json_safety import as_mapping
 from werewolf.llm.registry import MODEL_REGISTRY, resolved_model_matches
 
 VALIDITY_POLICY_VERSION = 2
@@ -32,10 +33,16 @@ MIN_SNAPSHOT_COVERAGE = 0.95
 def _model_identity_match(call: dict) -> bool:
     requested = call.get("requested_model")
     resolved = call.get("resolved_model")
+    if (
+        requested is not None and not isinstance(requested, str)
+    ) or (
+        resolved is not None and not isinstance(resolved, str)
+    ):
+        return False
     if not requested or not resolved:
         return True
     alias = call.get("model_alias")
-    if alias in MODEL_REGISTRY:
+    if isinstance(alias, str) and alias in MODEL_REGISTRY:
         return resolved_model_matches(MODEL_REGISTRY[alias], resolved)
     matching_specs = [
         spec for spec in MODEL_REGISTRY.values() if spec.model == requested
@@ -79,7 +86,7 @@ def classify_game(rows: list[dict]) -> dict:
             e = r["event"]
             if e.get("type") == "belief_snapshot":
                 emitted += 1
-                if (e.get("payload") or {}).get("valid"):
+                if as_mapping(e.get("payload")).get("valid"):
                     valid += 1
         if not emitted:
             violations["missing_snapshot_instrumentation"] += 1

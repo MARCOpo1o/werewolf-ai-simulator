@@ -1,9 +1,14 @@
 """Canonical row-based usage and mixed-cost accounting for one game."""
 from __future__ import annotations
 
-import math
 from collections import defaultdict
 from typing import Callable
+
+from werewolf.json_safety import (
+    as_mapping,
+    nonnegative_finite_number,
+    nonnegative_int,
+)
 
 
 TOKEN_FIELDS = (
@@ -24,15 +29,15 @@ def _breakdown(calls: list[dict], key_fn: Callable[[dict], object]) -> dict:
         key = str(key_fn(call) if key_fn(call) is not None else "unknown")
         bucket = buckets[key]
         bucket["attempts"] += 1
-        cost = call.get("cost") or {}
-        usd = cost.get("usd")
-        if isinstance(usd, (int, float)) and not isinstance(usd, bool):
-            bucket["known_cost_usd"] += float(usd)
+        cost = as_mapping(call.get("cost"))
+        usd = nonnegative_finite_number(cost.get("usd"))
+        if usd is not None:
+            bucket["known_cost_usd"] += usd
             bucket["calls_with_known_cost"] += 1
         else:
             bucket["calls_without_known_cost"] += 1
-        total = (call.get("usage") or {}).get("total_tokens")
-        if isinstance(total, int) and not isinstance(total, bool):
+        total = nonnegative_int(as_mapping(call.get("usage")).get("total_tokens"))
+        if total is not None:
             bucket["total_tokens"] += total
     return dict(buckets)
 
@@ -50,24 +55,25 @@ def compute_usage(llm_calls: list[dict]) -> dict:
     token_fields_missing = {field: 0 for field in TOKEN_FIELDS}
 
     for call in api_calls:
-        usage = call.get("usage") or {}
+        usage = as_mapping(call.get("usage"))
         for field in TOKEN_FIELDS:
-            value = usage.get(field)
-            if isinstance(value, int) and not isinstance(value, bool):
+            value = nonnegative_int(usage.get(field))
+            if value is not None:
                 tokens[field] += value
             else:
                 token_fields_missing[field] += 1
 
-        cost = call.get("cost") or {}
-        source = cost.get("source") or "unavailable"
+        cost = as_mapping(call.get("cost"))
+        source = cost.get("source")
+        source = source if isinstance(source, str) and source else "unavailable"
         cost_sources.add(source)
         bucket = by_cost_source[source]
         bucket["attempts"] += 1
-        usd = cost.get("usd")
-        if isinstance(usd, (int, float)) and not isinstance(usd, bool):
-            known_cost += float(usd)
+        usd = nonnegative_finite_number(cost.get("usd"))
+        if usd is not None:
+            known_cost += usd
             calls_with_cost += 1
-            bucket["known_cost_usd"] += float(usd)
+            bucket["known_cost_usd"] += usd
             bucket["calls_with_known_cost"] += 1
         else:
             calls_without_cost += 1
@@ -83,13 +89,14 @@ def compute_usage(llm_calls: list[dict]) -> dict:
     errors = defaultdict(int)
     for call in llm_calls:
         category = call.get("error_category")
-        if category:
+        if isinstance(category, str) and category:
             errors[category] += 1
 
     result = {
         "attempts": len(api_calls),
         "decision_groups": len({
-            call.get("call_id") for call in llm_calls if call.get("call_id")
+            call.get("call_id") for call in llm_calls
+            if isinstance(call.get("call_id"), str) and call.get("call_id")
         }),
         "api_failures": sum(1 for call in api_calls if not call.get("api_ok")),
         "parse_failures": sum(call.get("parse_ok") is False for call in api_calls),
@@ -149,7 +156,7 @@ def compare_terminal_summary(computed: dict, terminal: dict | None) -> dict:
                 "computed": computed.get(computed_key),
                 "terminal": terminal.get(terminal_key),
             })
-    terminal_tokens = terminal.get("tokens") or {}
+    terminal_tokens = as_mapping(terminal.get("tokens"))
     for field in TOKEN_FIELDS:
         if terminal_tokens.get(field) != computed["tokens"].get(field):
             mismatches.append({
@@ -157,14 +164,17 @@ def compare_terminal_summary(computed: dict, terminal: dict | None) -> dict:
                 "computed": computed["tokens"].get(field),
                 "terminal": terminal_tokens.get(field),
             })
-    terminal_cost = terminal.get("cost_usd_total")
-    computed_cost = computed.get("known_cost_usd")
-    costs_match = (
+    raw_terminal_cost = terminal.get("cost_usd_total")
+    terminal_cost = nonnegative_finite_number(raw_terminal_cost)
+    computed_cost = nonnegative_finite_number(computed.get("known_cost_usd"))
+    costs_match = raw_terminal_cost is None or terminal_cost is not None
+    costs_match = costs_match and (
         terminal_cost is None and computed_cost is None
     ) or (
-        isinstance(terminal_cost, (int, float))
-        and isinstance(computed_cost, (int, float))
-        and math.isclose(terminal_cost, computed_cost, rel_tol=1e-9, abs_tol=1e-12)
+        terminal_cost is not None and computed_cost is not None
+        and abs(terminal_cost - computed_cost) <= max(
+            1e-12, 1e-9 * max(abs(terminal_cost), abs(computed_cost))
+        )
     )
     if not costs_match:
         mismatches.append({

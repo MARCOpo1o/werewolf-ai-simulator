@@ -7,6 +7,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from werewolf.json_safety import (
+    as_mapping,
+    nonnegative_finite_number,
+    nonnegative_int,
+)
+
+
+_TOKEN_FIELDS = (
+    "input_tokens", "cached_input_tokens", "output_tokens",
+    "reasoning_tokens", "total_tokens",
+)
+
 
 @dataclass(frozen=True)
 class ParseWarning:
@@ -77,6 +89,16 @@ def parse_game_log(path: str | Path) -> ParsedGameLog:
         if row_type == "config":
             if parsed.config is None:
                 parsed.config = row
+                if "role_map" in row and not isinstance(row.get("role_map"), dict):
+                    parsed.warnings.append(ParseWarning(
+                        "malformed_role_map", "Config role_map is not an object",
+                        source_line,
+                    ))
+                if "role_models" in row and not isinstance(row.get("role_models"), dict):
+                    parsed.warnings.append(ParseWarning(
+                        "malformed_role_models",
+                        "Config role_models is not an object", source_line,
+                    ))
             else:
                 parsed.warnings.append(ParseWarning(
                     "duplicate_config", "Additional config record ignored", source_line,
@@ -85,12 +107,54 @@ def parse_game_log(path: str | Path) -> ParsedGameLog:
             event = row.get("event")
             if isinstance(event, dict):
                 parsed.events.append({**event, "source_line": source_line})
+                if "payload" in event and not isinstance(event.get("payload"), dict):
+                    parsed.warnings.append(ParseWarning(
+                        "malformed_event_payload",
+                        "Event payload is not an object", source_line,
+                    ))
             else:
                 parsed.warnings.append(ParseWarning(
                     "malformed_event", "Event record does not contain an object", source_line,
                 ))
         elif row_type == "llm_call":
             parsed.llm_calls.append({**row, "source_line": source_line})
+            raw_usage = row.get("usage")
+            if raw_usage is not None and not isinstance(raw_usage, dict):
+                parsed.warnings.append(ParseWarning(
+                    "malformed_llm_usage", "LLM usage is not an object", source_line,
+                ))
+            else:
+                usage = as_mapping(raw_usage)
+                invalid_tokens = [
+                    field for field in _TOKEN_FIELDS
+                    if field in usage and nonnegative_int(usage[field]) is None
+                ]
+                if invalid_tokens:
+                    parsed.warnings.append(ParseWarning(
+                        "invalid_llm_tokens",
+                        "Negative, non-integer, or non-finite token values: "
+                        + ", ".join(invalid_tokens),
+                        source_line,
+                    ))
+            raw_cost = row.get("cost")
+            if raw_cost is not None and not isinstance(raw_cost, dict):
+                parsed.warnings.append(ParseWarning(
+                    "malformed_llm_cost", "LLM cost is not an object", source_line,
+                ))
+            else:
+                cost = as_mapping(raw_cost)
+                invalid_cost = [
+                    field for field in ("usd", "ticks")
+                    if field in cost and cost[field] is not None
+                    and nonnegative_finite_number(cost[field]) is None
+                ]
+                if invalid_cost:
+                    parsed.warnings.append(ParseWarning(
+                        "invalid_llm_cost",
+                        "Negative or non-finite cost values: "
+                        + ", ".join(invalid_cost),
+                        source_line,
+                    ))
         elif row_type == "usage_summary":
             usage = row.get("usage")
             if isinstance(usage, dict):
@@ -101,6 +165,29 @@ def parse_game_log(path: str | Path) -> ParsedGameLog:
                         source_line,
                     ))
                 parsed.usage_summary = usage
+                terminal_tokens = as_mapping(usage.get("tokens"))
+                invalid_tokens = [
+                    field for field in _TOKEN_FIELDS
+                    if field in terminal_tokens
+                    and nonnegative_int(terminal_tokens[field]) is None
+                ]
+                if invalid_tokens:
+                    parsed.warnings.append(ParseWarning(
+                        "invalid_terminal_tokens",
+                        "Negative, non-integer, or non-finite terminal tokens: "
+                        + ", ".join(invalid_tokens),
+                        source_line,
+                    ))
+                if (
+                    usage.get("cost_usd_total") is not None
+                    and nonnegative_finite_number(
+                        usage.get("cost_usd_total")
+                    ) is None
+                ):
+                    parsed.warnings.append(ParseWarning(
+                        "invalid_terminal_cost",
+                        "Terminal cost is negative or non-finite", source_line,
+                    ))
             else:
                 parsed.warnings.append(ParseWarning(
                     "malformed_usage_summary", "Usage summary is not an object", source_line,

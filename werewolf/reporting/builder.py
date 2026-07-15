@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from werewolf.evaluation.validity import classify_game
+from werewolf.json_safety import as_mapping
 from werewolf.reporting.analysis import (
     build_belief_analysis,
     build_decision_analysis,
@@ -16,7 +17,7 @@ from werewolf.reporting.usage import compare_terminal_summary, compute_usage
 
 
 REPORT_SCHEMA_VERSION = 1
-REPORT_BUILD_VERSION = 4
+REPORT_BUILD_VERSION = 5
 ANALYSIS_ELIGIBILITY_POLICY_VERSION = 1
 _AGENT_EVENT_TYPES = {
     "thought", "message", "vote", "belief_snapshot", "divine_result",
@@ -26,15 +27,16 @@ _AGENT_EVENT_TYPES = {
 def _observed_models(calls: list[dict]) -> dict:
     observed = defaultdict(set)
     for call in calls:
-        role = call.get("player_role") or "unknown"
-        if call.get("resolved_model"):
+        role = call.get("player_role")
+        role = role if isinstance(role, str) and role else "unknown"
+        if isinstance(call.get("resolved_model"), str) and call.get("resolved_model"):
             observed[role].add(call["resolved_model"])
     return {key: sorted(value) for key, value in observed.items()}
 
 
 def _players(config: dict) -> list[dict]:
     players = []
-    for raw_id, info in (config.get("role_map") or {}).items():
+    for raw_id, info in as_mapping(config.get("role_map")).items():
         if not isinstance(info, dict):
             continue
         try:
@@ -60,7 +62,10 @@ def _timeline(parsed: ParsedGameLog, calls_by_id: dict[str, list[dict]]) -> list
             event_id_source = "derived_from_numeric_id"
         else:
             event_id_source = "persisted" if event_id else "unavailable"
-        source_call_id = item.get("source_call_id")
+        raw_source_call_id = item.get("source_call_id")
+        source_call_id = (
+            raw_source_call_id if isinstance(raw_source_call_id, str) else None
+        )
         if source_call_id and source_call_id in calls_by_id:
             link_quality = "exact"
         else:
@@ -111,7 +116,7 @@ def build_full_report(
 
     calls_by_id = defaultdict(list)
     for call in parsed.llm_calls:
-        if call.get("call_id"):
+        if isinstance(call.get("call_id"), str) and call.get("call_id"):
             calls_by_id[call["call_id"]].append(call)
     timeline = _timeline(parsed, calls_by_id)
 
@@ -177,6 +182,7 @@ def build_full_report(
     role_map = {str(player["id"]): {
         "role": player["role"], "team": player["team"],
     } for player in players}
+    configured_role_models = as_mapping(config.get("role_models"))
     overview = {
         "game_id": game_id,
         "completion_status": completion,
@@ -193,7 +199,7 @@ def build_full_report(
         "n_wolves": config.get("n_wolves"),
         "n_seers": config.get("n_seers"),
         "role_assignment": role_map,
-        "requested_models": config.get("role_models") or {
+        "requested_models": configured_role_models or {
             "all": {
                 "alias": config.get("model_alias"),
                 "requested_model": config.get("model"),
@@ -271,7 +277,7 @@ def build_history_summary(report: dict) -> dict:
     overview = report.get("overview") or {}
     usage = report.get("usage") or overview.get("usage") or {}
     source = report.get("source") or {}
-    requested = overview.get("requested_models") or {}
+    requested = as_mapping(overview.get("requested_models"))
     models = sorted({
         info.get("alias") or info.get("requested_model") or info.get("model")
         for info in requested.values() if isinstance(info, dict)
