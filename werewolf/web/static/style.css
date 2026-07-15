@@ -53,6 +53,14 @@ header h1 {
     border-radius: 4px;
 }
 
+.winner-report-link {
+    display: block;
+    margin-top: 0.6rem;
+    color: white;
+    font-size: 0.8rem;
+    text-decoration: underline;
+}
+
 #status-bar {
     display: flex;
     gap: 1.5rem;

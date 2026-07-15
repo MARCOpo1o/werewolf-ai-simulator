@@ -181,6 +181,18 @@ class ReportApiTests(unittest.TestCase):
         live = self.client.get("/").get_data(as_text=True)
         self.assertIn('href="/games"', live)
 
+    def test_report_page_has_forensic_sections_without_calibration_claims(self):
+        response = self.client.get(f"/games/{self.game_id}")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        for section in (
+            "overview", "timeline", "beliefs", "decisions", "manipulation",
+            "usage", "reproducibility",
+        ):
+            self.assertIn(f'id="{section}"', text)
+        self.assertIn("/static/report.js", text)
+        self.assertNotIn("calibration", text.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

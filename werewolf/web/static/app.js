@@ -692,7 +692,13 @@ function showWinner() {
     if (gameState.winner) {
         display.classList.remove('hidden', 'wolf-win', 'village-win');
         display.classList.add(gameState.winner === 'wolf' ? 'wolf-win' : 'village-win');
-        display.textContent = `${gameState.winner.toUpperCase()} WINS!`;
+        const result = document.createElement('span');
+        result.textContent = `${gameState.winner.toUpperCase()} WINS!`;
+        const report = document.createElement('a');
+        report.href = `/games/${encodeURIComponent(gameState.game_id)}`;
+        report.textContent = 'Open forensic report';
+        report.className = 'winner-report-link';
+        display.replaceChildren(result, report);
         clearCenterDisplay();
     }
 }
