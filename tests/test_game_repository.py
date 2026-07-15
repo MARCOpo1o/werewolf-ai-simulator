@@ -226,6 +226,27 @@ class GameRepositoryTests(unittest.TestCase):
         self.assertEqual(games[0]["created_at"], "2026-07-14T10:00:00.500000Z")
         self.assertEqual(games[1]["created_at"], "2026-07-14T10:00:00.000000Z")
 
+    def test_old_sidecar_timestamp_is_normalized_during_migration(self):
+        game_id = "game_7_timestamp_migration"
+        write_rows(self.root, game_id, [
+            config(game_id, "2026-07-14T10:00:00Z"),
+        ])
+        repository = GameRepository(self.root)
+        repository.rebuild()
+        meta_path = repository.meta_path(game_id)
+        with open(meta_path, encoding="utf-8") as handle:
+            old_meta = json.load(handle)
+        old_meta["meta_schema_version"] = 2
+        old_meta["created_at"] = "2026-07-14T10:00:00Z"
+        with open(meta_path, "w", encoding="utf-8") as handle:
+            json.dump(old_meta, handle)
+
+        migrated = GameRepository(self.root).list_games()["games"][0]
+        self.assertEqual(
+            migrated["created_at"], "2026-07-14T10:00:00.000000Z",
+        )
+        self.assertEqual(migrated["created_at_source"], "config_record")
+
     def test_orphaned_derived_files_are_removed(self):
         orphan = self.root / "game_9_orphan.meta.json"
         orphan.write_text("{}", encoding="utf-8")

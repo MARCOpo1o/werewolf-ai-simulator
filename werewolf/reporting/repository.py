@@ -284,12 +284,13 @@ class GameRepository:
             created_source = "filesystem"
 
         old_source = old.get("created_at_source")
+        normalized_old_created = _utc_iso(old.get("created_at"))
         if (
-            old.get("created_at")
+            normalized_old_created
             and _CREATED_SOURCE_RANK.get(old_source, 0)
             >= _CREATED_SOURCE_RANK[created_source]
         ):
-            created_at = old["created_at"]
+            created_at = normalized_old_created
             created_source = old_source
 
         report = build_full_report(parsed, metadata={
