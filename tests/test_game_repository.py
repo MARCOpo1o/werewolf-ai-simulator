@@ -31,6 +31,48 @@ def config(game_id: str, created_at=None, seed=1) -> dict:
     return row
 
 
+def llm_call(**overrides) -> dict:
+    row = {
+        "type": "llm_call", "schema_version": 2, "call_id": "call-1",
+        "attempt": 1, "api_attempted": True, "api_ok": True,
+        "parse_ok": True, "validation_ok": True,
+        "error_category": "completed", "player_id": 0,
+        "player_role": "villager", "phase": "day_discuss", "round": 1,
+        "required_action": "speak_public", "requested_model": "model-a",
+        "resolved_model": "model-a", "usage": {"total_tokens": 1},
+        "cost": {"source": "provider_reported", "usd": 0.1},
+    }
+    row.update(overrides)
+    return row
+
+
+def completed_rows(game_id: str) -> list[dict]:
+    cfg = config(game_id, "2026-07-14T10:00:00Z")
+    cfg["event_schema_version"] = 2
+    return [
+        cfg,
+        llm_call(),
+        {"type": "event", "event": {
+            "id": 0, "event_id": "evt_000000", "round": 1,
+            "phase": "day_discuss", "type": "message", "channel": "public",
+            "speaker_id": 0, "source_call_id": "call-1",
+            "discussion_cycle": 1, "payload": {"text": "hello"},
+        }},
+        {"type": "usage_summary", "usage": {
+            "calls": 1, "retries": 0, "fallbacks": 0,
+            "api_failures": 0, "parse_failures": 0,
+            "validation_failures": 0, "recovered_parses": 0,
+            "tokens": {
+                "input_tokens": 0, "cached_input_tokens": 0,
+                "output_tokens": 0, "reasoning_tokens": 0,
+                "total_tokens": 1,
+            },
+            "cost_usd_total": 0.1,
+        }},
+        {"type": "outcome", "winner": "village", "rounds": 1},
+    ]
+
+
 class GameRepositoryTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -171,6 +213,64 @@ class GameRepositoryTests(unittest.TestCase):
             index = json.load(handle)
         self.assertEqual(len(index["games"]), 1)
         self.assertFalse(list(self.root.glob("*.tmp")))
+
+    def test_history_uses_canonical_report_semantics_before_report_request(self):
+        cases = {}
+
+        fallback = completed_rows("game_12_fallback")
+        fallback.insert(-2, llm_call(
+            call_id="call-fallback", api_attempted=False, api_ok=False,
+            parse_ok=False, validation_ok=False, required_action="vote",
+            error_category="fallback_used", cost={"source": "unavailable"},
+        ))
+        cases["game_12_fallback"] = fallback
+
+        mismatch = completed_rows("game_13_model")
+        mismatch[1]["resolved_model"] = "model-b"
+        cases["game_13_model"] = mismatch
+
+        terminal_mismatch = completed_rows("game_14_usage")
+        terminal_mismatch[-2]["usage"]["cost_usd_total"] = 99.0
+        cases["game_14_usage"] = terminal_mismatch
+
+        missing_call = completed_rows("game_15_missing_call")
+        missing_call[2]["event"]["source_call_id"] = "call-does-not-exist"
+        cases["game_15_missing_call"] = missing_call
+
+        for game_id, rows in cases.items():
+            write_rows(self.root, game_id, rows)
+
+        malformed_id = "game_16_malformed"
+        malformed_path = write_rows(
+            self.root, malformed_id, completed_rows(malformed_id),
+        )
+        with open(malformed_path, "a", encoding="utf-8") as handle:
+            handle.write("{not-json\n")
+
+        history = {
+            row["game_id"]: row
+            for row in GameRepository(self.root).list_games()["games"]
+        }
+        self.assertEqual(history["game_12_fallback"]["analysis_eligibility"], "ineligible")
+        self.assertIn(
+            "validity:fallback_vote",
+            history["game_12_fallback"]["analysis_exclusion_reasons"],
+        )
+        self.assertEqual(history["game_13_model"]["analysis_eligibility"], "ineligible")
+        self.assertIn(
+            "validity:resolved_model_mismatch",
+            history["game_13_model"]["analysis_exclusion_reasons"],
+        )
+        self.assertEqual(history["game_14_usage"]["known_cost_usd"], 0.1)
+        self.assertEqual(history["game_14_usage"]["usage_reliability"], "inconsistent")
+        self.assertEqual(history["game_14_usage"]["integrity_status"], "warnings")
+        self.assertEqual(history["game_15_missing_call"]["analysis_eligibility"], "ineligible")
+        self.assertIn(
+            "missing_strategic_call_evidence",
+            history["game_15_missing_call"]["analysis_exclusion_reasons"],
+        )
+        self.assertEqual(history[malformed_id]["integrity_status"], "warnings")
+        self.assertEqual(history[malformed_id]["analysis_eligibility"], "eligible")
 
 
 if __name__ == "__main__":

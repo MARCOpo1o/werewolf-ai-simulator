@@ -17,9 +17,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from werewolf.reporting.builder import build_full_report, build_history_summary
+from werewolf.reporting.parser import ParsedGameLog, parse_game_log
+
 
 INDEX_SCHEMA_VERSION = 1
-META_SCHEMA_VERSION = 1
+META_SCHEMA_VERSION = 2
 _GAME_ID = re.compile(r"^game_[A-Za-z0-9_-]{1,190}$")
 _CREATED_SOURCE_RANK = {
     "filesystem": 1,
@@ -255,47 +258,13 @@ class GameRepository:
         ):
             return old
 
-        config = outcome = usage_summary = None
-        timestamps: list[str] = []
-        warnings = 0
-        record_count = 0
         try:
-            with open(log_path, encoding="utf-8") as handle:
-                for line in handle:
-                    if not line.strip():
-                        continue
-                    try:
-                        row = json.loads(line)
-                    except json.JSONDecodeError:
-                        warnings += 1
-                        continue
-                    if not isinstance(row, dict):
-                        warnings += 1
-                        continue
-                    record_count += 1
-                    row_type = row.get("type")
-                    if row_type == "config" and config is None:
-                        config = row
-                    elif row_type == "outcome":
-                        outcome = row
-                    elif row_type == "usage_summary":
-                        usage_summary = row.get("usage")
-                    for candidate in (
-                        row.get("created_at"), row.get("ts"),
-                        (row.get("event") or {}).get("t")
-                        if isinstance(row.get("event"), dict) else None,
-                    ):
-                        timestamp = _utc_iso(candidate)
-                        if timestamp:
-                            timestamps.append(timestamp)
-
+            parsed = parse_game_log(log_path)
         except OSError:
             return None
 
-        config = config or {}
-        configured_id = config.get("game_id")
-        if configured_id and configured_id != game_id:
-            warnings += 1
+        config = parsed.config or {}
+        timestamps = self._record_timestamps(parsed)
         config_created = _utc_iso(config.get("created_at"))
         if config_created:
             created_at, created_source = config_created, "config_record"
@@ -315,51 +284,35 @@ class GameRepository:
             created_at = old["created_at"]
             created_source = old_source
 
-        models = []
-        role_models = config.get("role_models")
-        if isinstance(role_models, dict):
-            models = sorted({
-                info.get("alias") or info.get("requested_model")
-                for info in role_models.values() if isinstance(info, dict)
-            } - {None})
-        elif config.get("model_alias") or config.get("model"):
-            models = [config.get("model_alias") or config.get("model")]
-
-        entry = {
-            "meta_schema_version": META_SCHEMA_VERSION,
+        report = build_full_report(parsed, metadata={
             "game_id": game_id,
-            "log_name": log_path.name,
-            "completion_status": "completed" if outcome else "incomplete",
-            "integrity_status": (
-                "corrupt" if not config and record_count == 0
-                else "warnings" if warnings else "clean"
-            ),
-            "analysis_eligibility": (
-                "ineligible" if not config and record_count == 0
-                else "limited" if not outcome else "eligible"
-            ),
-            "analysis_exclusion_reasons": (
-                ["unrecoverable_log"] if not config and record_count == 0
-                else ["game_incomplete"] if not outcome else []
-            ),
             "created_at": created_at,
             "created_at_source": created_source,
-            "winner": outcome.get("winner") if outcome else None,
-            "rounds": outcome.get("rounds") if outcome else None,
-            "seed": config.get("seed"),
-            "n_players": config.get("n_players"),
-            "models": models,
-            "known_cost_usd": (
-                usage_summary.get("cost_usd_total")
-                if isinstance(usage_summary, dict) else None
-            ),
-            "warning_count": warnings,
-            "record_count": record_count,
+        })
+        atomic_json_write(self.report_path(game_id), report)
+        entry = {
+            "meta_schema_version": META_SCHEMA_VERSION,
+            **build_history_summary(report),
+            "log_name": log_path.name,
+            "created_at": created_at,
+            "created_at_source": created_source,
             "source_size": stat.st_size,
             "source_mtime_ns": stat.st_mtime_ns,
         }
         atomic_json_write(self.meta_path(game_id), entry)
         return entry
+
+    @staticmethod
+    def _record_timestamps(parsed: ParsedGameLog) -> list[str]:
+        timestamps = []
+        for wrapped in parsed.rows:
+            row = wrapped["record"]
+            event = row.get("event") if isinstance(row.get("event"), dict) else {}
+            for candidate in (row.get("created_at"), row.get("ts"), event.get("t")):
+                timestamp = _utc_iso(candidate)
+                if timestamp:
+                    timestamps.append(timestamp)
+        return timestamps
 
     def update_from_report(self, game_id: str, report: dict) -> None:
         """Copy report headline fields into the derived history metadata."""
@@ -368,26 +321,7 @@ class GameRepository:
             entry = self._entries.get(validate_game_id(game_id))
             if entry is None:
                 return
-            overview = report.get("overview") or {}
-            source = report.get("source") or {}
-            entry.update({
-                "completion_status": overview.get(
-                    "completion_status", entry["completion_status"]
-                ),
-                "integrity_status": overview.get(
-                    "integrity_status", entry["integrity_status"]
-                ),
-                "analysis_eligibility": overview.get(
-                    "analysis_eligibility", entry["analysis_eligibility"]
-                ),
-                "analysis_exclusion_reasons": overview.get(
-                    "analysis_exclusion_reasons", []
-                ),
-                "known_cost_usd": (overview.get("usage") or {}).get(
-                    "known_cost_usd"
-                ),
-                "warning_count": len(source.get("warnings") or []),
-            })
+            entry.update(build_history_summary(report))
             atomic_json_write(self.meta_path(game_id), entry)
             self._write_index()
 

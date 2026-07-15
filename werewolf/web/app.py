@@ -156,6 +156,12 @@ def new_game():
             old_engine.close()
         except Exception:
             app.logger.exception("Failed to close previous game")
+    try:
+        game_repository.refresh_game(state["game_id"])
+    except Exception:
+        # The active engine is valid even if its derived history cache could
+        # not be refreshed. A later explicit reconciliation can rebuild it.
+        app.logger.exception("New game index refresh failed")
     return jsonify({
         "game": state,
         "links": {

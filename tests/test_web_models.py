@@ -463,13 +463,18 @@ class WebApiTests(unittest.TestCase):
     def test_successful_creation_swaps_then_closes_old_engine(self):
         old_engine = mock.Mock()
         new_engine = mock.Mock()
-        new_engine.get_state_dict.return_value = {"game_id": "new"}
+        new_engine.get_state_dict.return_value = {"game_id": "game_1_new"}
         self.webapp.game_engine = old_engine
-        with mock.patch.object(self.webapp, "create_engine_from_payload", return_value=new_engine):
+        with mock.patch.object(
+            self.webapp, "create_engine_from_payload", return_value=new_engine,
+        ), mock.patch.object(
+            self.webapp.game_repository, "refresh_game",
+        ) as refresh_game:
             response = self.client.post("/api/new", json={"model": "fast"})
         self.assertEqual(response.status_code, 200)
         self.assertIs(self.webapp.game_engine, new_engine)
         old_engine.close.assert_called_once_with()
+        refresh_game.assert_called_once_with("game_1_new")
         self.webapp.game_engine = None
 
     def test_state_serialization_failure_preserves_old_game_and_closes_new(self):
@@ -489,9 +494,11 @@ class WebApiTests(unittest.TestCase):
         old_engine = mock.Mock()
         old_engine.close.side_effect = RuntimeError("close failed")
         new_engine = mock.Mock()
-        new_engine.get_state_dict.return_value = {"game_id": "new"}
+        new_engine.get_state_dict.return_value = {"game_id": "game_1_new"}
         self.webapp.game_engine = old_engine
-        with mock.patch.object(self.webapp, "create_engine_from_payload", return_value=new_engine):
+        with mock.patch.object(
+            self.webapp, "create_engine_from_payload", return_value=new_engine,
+        ), mock.patch.object(self.webapp.game_repository, "refresh_game"):
             response = self.client.post("/api/new", json={"model": "fast"})
         self.assertEqual(response.status_code, 200)
         self.assertIs(self.webapp.game_engine, new_engine)
