@@ -24,6 +24,8 @@ Normal `/api/games` requests read the in-memory derived index and do not rescan 
 
 Derived JSON uses a same-directory temporary file, `flush()`, `fsync()`, and `os.replace()`. Directory syncing is best-effort where supported. Sidecar freshness uses source size and `mtime_ns`; built reports also retain the canonical JSONL SHA-256.
 
+The repository fast path also verifies the metadata schema version, report schema and build versions, report-sidecar existence, and its recorded source fingerprint. A missing report sidecar or any version mismatch forces regeneration even when the JSONL size and modification time are unchanged.
+
 History metadata is projected from the same versioned full-report builder used by the report page. It does not independently reinterpret validity, eligibility, usage, or cost. `REPORT_BUILD_VERSION` invalidates cached reports whenever derived analysis semantics change, even when the transport schema is unchanged.
 
 History sorts descending by immutable `(created_at, game_id)`. Timestamp precedence is:
@@ -33,6 +35,8 @@ History sorts descending by immutable `(created_at, game_id)`. Timestamp precede
 3. the filesystem timestamp.
 
 Sidecars record `created_at_source`. A recovered canonical timestamp is never downgraded to a filesystem fallback. Pagination cursors are opaque, versioned encodings of the sort tuple rather than array offsets.
+
+All recovered UTC timestamps use fixed microsecond precision. Lexicographic cursor ordering therefore agrees with chronological ordering even when the source timestamps originally used different fractional-second precision.
 
 ## Independent status dimensions
 
@@ -55,6 +59,8 @@ A completed game may have integrity warnings or be unsuitable for strategic anal
 
 Cost reporting keeps exact, estimated, and unavailable calls distinct. Reports expose known cost, counts with and without known cost, completeness, and source categories. A partial total is never presented as the complete price of the game.
 
+Token and cost fields must be finite and non-negative. Invalid numeric values and structurally malformed nested usage or cost objects generate integrity warnings and are excluded from computed totals rather than crashing the report or contaminating accounting.
+
 ## Provenance and legacy logs
 
 New events use a deterministic ID derived from their numeric sequence:
@@ -66,6 +72,8 @@ event_id = evt_<zero-padded numeric id>
 All events produced by one agent response share its `source_call_id`; each event still has its own `event_id`. Discussion events record `discussion_cycle` directly.
 
 The parser preserves `source_line` and distinguishes exact, inferred, ambiguous, and unavailable links. Legacy decision links are inferred only when player, action, phase, round, ordering, and uniqueness support one candidate. Missing legacy fields remain unavailable rather than being fabricated.
+
+For current logs, an explicit `source_call_id` is labeled `exact` only after the referenced call also matches the event's player, round, phase, required action, and source ordering. A present but semantically inconsistent reference is labeled `mismatched`. Wolf-kill vote mappings receive the same per-voter validation and are exposed as individual source links.
 
 For new event-schema logs, day votes explicitly record `vote_stage` as `main` or `runoff`. Aggregate wolf-kill events record a `vote_source_call_ids` mapping from each voting wolf to the call that produced that vote. The validated filename and route ID are canonical; a conflicting config ID produces a `game_id_mismatch` warning and can never redirect report links.
 
@@ -88,5 +96,9 @@ This is spoiler protection, not authentication. Anyone who can request `include_
 The report derives only signals present in structured records. It does not mine free-form thoughts with keyword rules or ask another model to judge them. Self-reported influential speakers appear only when explicitly present in the recorded belief schema.
 
 Belief views may show predicted probabilities, binary outcomes, movement toward or away from truth, and per-prediction squared error. A value is labeled a Brier-score contribution only when the versioned belief schema defines it as a valid probability for that binary outcome. A single game does not support a calibration curve or a claim that one model is better calibrated.
+
+Every observed player-round has explicit pre- and post-discussion checkpoint records. Each checkpoint is classified as `valid`, `partial`, `invalid`, or `missing`; entirely absent checkpoints remain visible as gaps and are never connected as if a measurement existed.
+
+Malformed nested config, event, belief, usage, and cost values are treated as damaged evidence. The parser records field-specific warnings and continues building the portions of the report supported by valid records.
 
 Manipulation and resistance panels are descriptive, non-causal signals. Causal susceptibility and cross-model conclusions require controlled multi-game experiments and belong in later benchmark work.
