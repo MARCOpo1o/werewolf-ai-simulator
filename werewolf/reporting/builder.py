@@ -11,13 +11,14 @@ from werewolf.reporting.analysis import (
     build_belief_analysis,
     build_decision_analysis,
     build_manipulation_signals,
+    expected_actions_for_event,
 )
 from werewolf.reporting.parser import ParsedGameLog, parse_game_log
 from werewolf.reporting.usage import compare_terminal_summary, compute_usage
 
 
 REPORT_SCHEMA_VERSION = 1
-REPORT_BUILD_VERSION = 6
+REPORT_BUILD_VERSION = 7
 ANALYSIS_ELIGIBILITY_POLICY_VERSION = 1
 _AGENT_EVENT_TYPES = {
     "thought", "message", "vote", "belief_snapshot", "divine_result",
@@ -51,6 +52,83 @@ def _players(config: dict) -> list[dict]:
     return sorted(players, key=lambda player: player["id"])
 
 
+def _call_group_matches(
+    event: dict,
+    calls: list[dict],
+    expected_actions: Optional[set[str]],
+    *,
+    player_id: Optional[int] = None,
+) -> bool:
+    expected_player = event.get("speaker_id") if player_id is None else player_id
+    event_line = event.get("source_line")
+    for call in calls:
+        required_action = call.get("required_action")
+        if call.get("player_id") != expected_player:
+            continue
+        if call.get("round") != event.get("round"):
+            continue
+        if call.get("phase") != event.get("phase"):
+            continue
+        if expected_actions is not None and (
+            not isinstance(required_action, str)
+            or required_action not in expected_actions
+        ):
+            continue
+        if not isinstance(event_line, int) or call.get("source_line", 0) > event_line:
+            continue
+        return True
+    return False
+
+
+def _integer_key_mapping(value: object) -> tuple[dict[int, object], bool]:
+    result = {}
+    valid = isinstance(value, dict)
+    for raw_key, mapped in as_mapping(value).items():
+        try:
+            key = int(raw_key)
+        except (TypeError, ValueError):
+            valid = False
+            continue
+        if isinstance(raw_key, bool) or key in result:
+            valid = False
+            continue
+        result[key] = mapped
+    return result, valid
+
+
+def _kill_vote_links(event: dict, calls_by_id: dict[str, list[dict]]) -> tuple[list[dict], str]:
+    payload = as_mapping(event.get("payload"))
+    votes, votes_valid = _integer_key_mapping(payload.get("votes"))
+    sources, sources_valid = _integer_key_mapping(
+        payload.get("vote_source_call_ids")
+    )
+    links = []
+    for player_id in sorted(set(votes) | set(sources)):
+        source_call_id = sources.get(player_id)
+        if not isinstance(source_call_id, str) or source_call_id not in calls_by_id:
+            quality = "unavailable"
+        elif _call_group_matches(
+            event, calls_by_id[source_call_id], {"choose_wolf_kill"},
+            player_id=player_id,
+        ):
+            quality = "exact"
+        else:
+            quality = "mismatched"
+        links.append({
+            "player_id": player_id,
+            "target_id": votes.get(player_id),
+            "source_call_id": source_call_id if isinstance(source_call_id, str) else None,
+            "link_quality": quality,
+        })
+    if not votes or not votes_valid or not sources_valid or set(votes) != set(sources):
+        return links, "mismatched" if sources else "unavailable"
+    if all(link["link_quality"] == "exact" for link in links):
+        return links, "exact"
+    if any(link["link_quality"] == "mismatched" for link in links):
+        return links, "mismatched"
+    return links, "unavailable"
+
+
 def _timeline(parsed: ParsedGameLog, calls_by_id: dict[str, list[dict]]) -> list[dict]:
     timeline = []
     for event in parsed.events:
@@ -67,7 +145,12 @@ def _timeline(parsed: ParsedGameLog, calls_by_id: dict[str, list[dict]]) -> list
             raw_source_call_id if isinstance(raw_source_call_id, str) else None
         )
         if source_call_id and source_call_id in calls_by_id:
-            link_quality = "exact"
+            link_quality = (
+                "exact" if _call_group_matches(
+                    item, calls_by_id[source_call_id],
+                    expected_actions_for_event(item),
+                ) else "mismatched"
+            )
         else:
             link_quality = "unavailable"
         item.update({
@@ -77,6 +160,10 @@ def _timeline(parsed: ParsedGameLog, calls_by_id: dict[str, list[dict]]) -> list
             "discussion_cycle": item.get("discussion_cycle"),
             "link_quality": link_quality,
         })
+        if item.get("type") == "kill":
+            vote_links, kill_quality = _kill_vote_links(item, calls_by_id)
+            item["vote_source_links"] = vote_links
+            item["link_quality"] = kill_quality
         timeline.append(item)
     return timeline
 
@@ -123,10 +210,17 @@ def build_full_report(
     event_schema = config.get("event_schema_version")
     missing_strategic_evidence = []
     for event in timeline:
+        if event.get("type") == "kill":
+            if event_schema and event_schema >= 3 and event.get("link_quality") != "exact":
+                missing_strategic_evidence.append(event.get("event_id"))
+            continue
         if event.get("type") not in _AGENT_EVENT_TYPES:
             continue
         source_call_id = event.get("source_call_id")
-        if source_call_id and source_call_id not in calls_by_id:
+        if source_call_id and (
+            source_call_id not in calls_by_id
+            or event.get("link_quality") != "exact"
+        ):
             missing_strategic_evidence.append(event.get("event_id"))
         elif event_schema and event_schema >= 2 and not source_call_id:
             missing_strategic_evidence.append(event.get("event_id"))

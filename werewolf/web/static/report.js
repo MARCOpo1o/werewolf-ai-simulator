@@ -130,7 +130,10 @@ function eventDescription(event) {
         case 'message': return p.text || '(empty message)';
         case 'thought': return p.thought || '(empty thought)';
         case 'vote': return `${p.vote_stage === 'runoff' ? 'Runoff: ' : ''}${playerLabel(p.voter_id)} voted for P${p.target_id}`;
-        case 'kill': return `Night target P${p.victim_id}; votes ${JSON.stringify(p.votes || {})}`;
+        case 'kill': {
+            const links = (event.vote_source_links || []).map(link => `P${link.player_id}→P${link.target_id} · ${link.source_call_id || 'no call'} · ${link.link_quality}`).join('; ');
+            return `Night target P${p.victim_id}${links ? `; ${links}` : `; votes ${JSON.stringify(p.votes || {})}`}`;
+        }
         case 'divine_result': return `Checked P${p.target_id}: ${p.is_werewolf ? 'werewolf' : 'not werewolf'}`;
         case 'death_announcement': return `P${p.victim_id} died (${p.cause || 'unknown cause'})${p.victim_role ? ` · revealed ${p.victim_role}` : ''}`;
         case 'elimination': return `P${p.eliminated_id} eliminated · ${p.eliminated_role || 'role unavailable'}`;

@@ -14,7 +14,7 @@ def call(call_id="call-1", *, cost=0.1, source="provider_reported"):
         "api_attempted": True, "api_ok": True,
         "parse_ok": True, "parse_method": "direct", "validation_ok": True,
         "error_category": "completed", "player_id": 0,
-        "player_role": "villager", "phase": "day_discuss",
+        "player_role": "villager", "phase": "day_discuss", "round": 1,
         "required_action": "speak_public", "requested_model": "model-a",
         "resolved_model": "model-a",
         "usage": {
@@ -118,6 +118,58 @@ class ReportBuilderTests(unittest.TestCase):
             "missing_strategic_call_evidence",
             report["overview"]["analysis_exclusion_reasons"],
         )
+
+    def test_exact_link_requires_semantically_matching_call(self):
+        rows = fixture_rows()
+        rows[1]["phase"] = "night_wolf_chat"
+        report = build_full_report_from_file(self.write(rows))
+        self.assertEqual(report["timeline"][0]["link_quality"], "mismatched")
+        self.assertEqual(report["overview"]["analysis_eligibility"], "ineligible")
+        self.assertIn(
+            "missing_strategic_call_evidence",
+            report["overview"]["analysis_exclusion_reasons"],
+        )
+
+    def test_kill_vote_call_mappings_are_validated_and_exposed(self):
+        game_id = "game_19_kill_links"
+        config = fixture_rows(game_id)[0]
+        config["event_schema_version"] = 3
+        wolf_one = call("call-w1", cost=0.1)
+        wolf_one.update({
+            "player_id": 1, "player_role": "werewolf",
+            "phase": "night_wolf_kill", "required_action": "choose_wolf_kill",
+        })
+        wolf_two = call("call-w3", cost=0.1)
+        wolf_two.update({
+            "player_id": 3, "player_role": "werewolf",
+            "phase": "night_wolf_kill", "required_action": "choose_wolf_kill",
+        })
+        kill = {"type": "event", "event": {
+            "id": 0, "event_id": "evt_000000", "round": 1,
+            "phase": "night_wolf_kill", "type": "kill",
+            "channel": "moderator_only", "speaker_id": None,
+            "source_call_id": None, "payload": {
+                "victim_id": 0, "votes": {"1": 0, "3": 0},
+                "vote_source_call_ids": {"1": "call-w1", "3": "call-w3"},
+            },
+        }}
+        rows = [
+            config, wolf_one, wolf_two, kill,
+            {"type": "outcome", "winner": "wolf", "rounds": 1},
+        ]
+        report = build_full_report_from_file(self.write(rows, game_id=game_id))
+        event = report["timeline"][0]
+        self.assertEqual(event["link_quality"], "exact")
+        self.assertEqual(
+            [link["link_quality"] for link in event["vote_source_links"]],
+            ["exact", "exact"],
+        )
+        self.assertEqual(report["overview"]["analysis_eligibility"], "eligible")
+
+        rows[2]["required_action"] = "speak_public"
+        damaged = build_full_report_from_file(self.write(rows, game_id=game_id))
+        self.assertEqual(damaged["timeline"][0]["link_quality"], "mismatched")
+        self.assertEqual(damaged["overview"]["analysis_eligibility"], "ineligible")
 
     def test_malformed_line_is_preserved_as_integrity_warning(self):
         path = self.write(fixture_rows(), malformed="{definitely-not-json")

@@ -249,7 +249,7 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
     }
 
 
-def _event_actions(event: dict) -> Optional[set[str]]:
+def expected_actions_for_event(event: dict) -> Optional[set[str]]:
     event_type = event.get("type")
     if event_type == "message":
         return {"wolf_chat"} if event.get("channel") == "werewolf" else {"speak_public"}
@@ -289,7 +289,7 @@ def build_decision_analysis(
                 "thought", "message", "vote", "belief_snapshot", "divine_result",
             }:
                 continue
-            actions = _event_actions(event)
+            actions = expected_actions_for_event(event)
             candidates = []
             for call_id, attempts in calls_by_id.items():
                 first = attempts[0]
@@ -479,5 +479,5 @@ def build_manipulation_signals(
 
 __all__ = [
     "build_belief_analysis", "build_decision_analysis",
-    "build_manipulation_signals",
+    "build_manipulation_signals", "expected_actions_for_event",
 ]
