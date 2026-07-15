@@ -27,7 +27,7 @@ from werewolf.reporting.parser import ParsedGameLog, parse_game_log
 
 
 INDEX_SCHEMA_VERSION = 1
-META_SCHEMA_VERSION = 2
+META_SCHEMA_VERSION = 3
 _GAME_ID = re.compile(r"^game_[A-Za-z0-9_-]{1,190}$")
 _CREATED_SOURCE_RANK = {
     "filesystem": 1,
@@ -64,7 +64,7 @@ def _utc_iso(value: Any) -> Optional[str]:
             dt = dt.astimezone(timezone.utc)
         else:
             return None
-        return dt.isoformat().replace("+00:00", "Z")
+        return dt.isoformat(timespec="microseconds").replace("+00:00", "Z")
     except (OverflowError, OSError, TypeError, ValueError):
         return None
 

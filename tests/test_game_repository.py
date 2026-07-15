@@ -185,7 +185,9 @@ class GameRepositoryTests(unittest.TestCase):
         ]
         write_rows(self.root, game_id, rows)
         upgraded = repository.refresh_game(game_id)
-        self.assertEqual(upgraded["created_at"], "2026-07-14T09:00:00Z")
+        self.assertEqual(
+            upgraded["created_at"], "2026-07-14T09:00:00.000000Z",
+        )
         self.assertEqual(upgraded["created_at_source"], "config_record")
 
         # A changed filesystem timestamp cannot displace canonical creation time.
@@ -209,6 +211,20 @@ class GameRepositoryTests(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         with self.assertRaises(InvalidCursor):
             repository.list_games(cursor="not-a-cursor")
+
+    def test_fixed_timestamp_precision_preserves_chronological_order(self):
+        earlier = "game_6_precision_earlier"
+        later = "game_6_precision_later"
+        write_rows(self.root, earlier, [
+            config(earlier, "2026-07-14T10:00:00Z"),
+        ])
+        write_rows(self.root, later, [
+            config(later, "2026-07-14T10:00:00.500000Z"),
+        ])
+        games = GameRepository(self.root).list_games()["games"]
+        self.assertEqual([game["game_id"] for game in games], [later, earlier])
+        self.assertEqual(games[0]["created_at"], "2026-07-14T10:00:00.500000Z")
+        self.assertEqual(games[1]["created_at"], "2026-07-14T10:00:00.000000Z")
 
     def test_orphaned_derived_files_are_removed(self):
         orphan = self.root / "game_9_orphan.meta.json"
