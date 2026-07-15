@@ -149,6 +149,16 @@ class BeliefReportTests(unittest.TestCase):
         )
         self.assertEqual(len(signals["wolf_suspicion_awareness"]), 4)
 
+    def test_malformed_snapshot_speaker_is_ignored(self):
+        timeline = belief_timeline()
+        malformed = dict(timeline[0])
+        malformed["speaker_id"] = [1]
+        timeline.append(malformed)
+        beliefs = build_belief_analysis(CONFIG, timeline)
+        signals = build_manipulation_signals(CONFIG, timeline, beliefs)
+        self.assertTrue(signals["available"])
+        self.assertEqual(len(signals["wolf_suspicion_awareness"]), 4)
+
     def test_wolf_observers_do_not_contaminate_village_resistance(self):
         config = {
             "belief_schema_version": 1,

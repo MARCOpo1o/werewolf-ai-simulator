@@ -426,7 +426,14 @@ def build_manipulation_signals(
     }
     awareness = []
     for event in timeline:
-        if event.get("type") != "belief_snapshot" or event.get("speaker_id") not in wolves:
+        if event.get("type") != "belief_snapshot":
+            continue
+        wolf_id = event.get("speaker_id")
+        if (
+            not isinstance(wolf_id, int)
+            or isinstance(wolf_id, bool)
+            or wolf_id not in wolves
+        ):
             continue
         payload = as_mapping(event.get("payload"))
         if not payload.get("valid"):
@@ -442,13 +449,13 @@ def build_manipulation_signals(
                 continue
             if observer not in village or not 0 <= estimate <= 1:
                 continue
-            key = (event.get("round"), observer, checkpoint, event.get("speaker_id"))
+            key = (event.get("round"), observer, checkpoint, wolf_id)
             observed = actual.get(key)
             if observed is None:
                 continue
             awareness.append({
                 "round": event.get("round"), "checkpoint": checkpoint,
-                "wolf_id": event.get("speaker_id"), "observer_id": observer,
+                "wolf_id": wolf_id, "observer_id": observer,
                 "estimated_suspicion": estimate, "observed_suspicion": observed,
                 "absolute_error": abs(estimate - observed),
             })
