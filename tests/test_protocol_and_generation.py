@@ -73,7 +73,27 @@ class DiscussionProtocolTests(unittest.TestCase):
             )
 
         config = next(r for r in rows if r["type"] == "config")
-        self.assertEqual(config["event_schema_version"], 2)
+        self.assertEqual(config["event_schema_version"], 3)
+
+        votes = [event for event in events if event["type"] == "vote"]
+        self.assertTrue(votes)
+        self.assertTrue(all(
+            event["payload"]["vote_stage"] == "main" for event in votes
+        ))
+
+        kills = [event for event in events if event["type"] == "kill"]
+        self.assertTrue(kills)
+        call_ids = {
+            row["call_id"] for row in rows
+            if row["type"] == "llm_call" and row.get("call_id")
+        }
+        for kill in kills:
+            vote_sources = kill["payload"]["vote_source_call_ids"]
+            self.assertEqual(
+                {int(player_id) for player_id in vote_sources},
+                {int(player_id) for player_id in kill["payload"]["votes"]},
+            )
+            self.assertTrue(set(vote_sources.values()) <= call_ids)
 
     def test_two_cycles_with_reversed_order(self):
         _, _, rows = run_game()

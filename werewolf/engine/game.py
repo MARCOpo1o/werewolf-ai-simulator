@@ -555,15 +555,12 @@ class GameEngine:
     def _wolf_kill_vote(self) -> Optional[int]:
         alive_wolves = self.state.get_alive_wolves()
         kill_votes = {}
-        source_call_ids = []
+        vote_source_call_ids = {}
 
         for wolf in alive_wolves:
             observation = build_observation(self.state, wolf.id, "choose_wolf_kill")
             response = self._get_agent_action(wolf.id, observation)
             source_call_id = response.get("_source_call_id")
-            if source_call_id:
-                source_call_ids.append(source_call_id)
-
             if response.get("thought"):
                 event = create_thought_event(
                     self.state, wolf.id, response["thought"],
@@ -576,6 +573,8 @@ class GameEngine:
             target = self._coerce_player_id(action.get("kill_target"))
             if target is not None:
                 kill_votes[wolf.id] = target
+                if source_call_id:
+                    vote_source_call_ids[wolf.id] = source_call_id
 
             update_player_seen_index(self.state, wolf.id)
 
@@ -589,7 +588,7 @@ class GameEngine:
 
         event = create_kill_event(
             self.state, victim_id, kill_votes,
-            source_call_ids=source_call_ids,
+            vote_source_call_ids=vote_source_call_ids,
         )
         self.logger.log_event(event)
 
@@ -764,6 +763,7 @@ class GameEngine:
                 event = create_vote_event(
                     self.state, player.id, target,
                     source_call_id=source_call_id,
+                    vote_stage="main",
                 )
                 self.logger.log_event(event)
                 self.transcript.print_event(event, self.players)
@@ -827,6 +827,7 @@ class GameEngine:
                 event = create_vote_event(
                     self.state, player.id, target,
                     source_call_id=source_call_id,
+                    vote_stage="runoff",
                 )
                 self.logger.log_event(event)
                 self.transcript.print_event(event, self.players)

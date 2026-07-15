@@ -166,6 +166,8 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
         if event.get("type") != "vote":
             continue
         payload = event.get("payload") or {}
+        if payload.get("vote_stage") == "runoff":
+            continue
         key = (event.get("round"), payload.get("voter_id"))
         main_votes.setdefault(key, payload.get("target_id"))
     for revision in revisions:
@@ -211,6 +213,11 @@ def _event_actions(event: dict) -> Optional[set[str]]:
     if event_type == "message":
         return {"wolf_chat"} if event.get("channel") == "werewolf" else {"speak_public"}
     if event_type == "vote":
+        stage = (event.get("payload") or {}).get("vote_stage")
+        if stage == "main":
+            return {"vote"}
+        if stage == "runoff":
+            return {"runoff_vote"}
         return {"vote", "runoff_vote"}
     if event_type == "belief_snapshot":
         checkpoint = (event.get("payload") or {}).get("checkpoint")

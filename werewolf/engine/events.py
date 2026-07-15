@@ -2,7 +2,7 @@ import time
 from typing import Optional
 
 
-EVENT_SCHEMA_VERSION = 2
+EVENT_SCHEMA_VERSION = 3
 
 
 def create_event(
@@ -86,7 +86,7 @@ def create_kill_event(
     victim_id: int,
     kill_votes: dict[int, int],
     *,
-    source_call_ids: Optional[list[str]] = None,
+    vote_source_call_ids: Optional[dict[int, str]] = None,
 ) -> dict:
     return create_event(
         game_state,
@@ -95,7 +95,7 @@ def create_kill_event(
         payload={
             "victim_id": victim_id,
             "votes": kill_votes,
-            "source_call_ids": source_call_ids or [],
+            "vote_source_call_ids": vote_source_call_ids or {},
         },
     )
 
@@ -146,12 +146,18 @@ def create_vote_event(
     target_id: int,
     *,
     source_call_id: Optional[str] = None,
+    vote_stage: str = "main",
 ) -> dict:
+    if vote_stage not in {"main", "runoff"}:
+        raise ValueError(f"Invalid vote stage: {vote_stage}")
     return create_event(
         game_state,
         event_type="vote",
         channel="public",
-        payload={"voter_id": voter_id, "target_id": target_id},
+        payload={
+            "voter_id": voter_id, "target_id": target_id,
+            "vote_stage": vote_stage,
+        },
         speaker_id=voter_id,
         source_call_id=source_call_id,
     )

@@ -657,7 +657,7 @@ function formatEventForLog(event) {
         case 'thought':
             return `💭 ${pid}: "${truncate(event.payload.thought, 50)}"`;
         case 'vote':
-            return `🗳️ ${pid} → P${event.payload.target_id}`;
+            return `🗳️ ${event.payload.vote_stage === 'runoff' ? 'Runoff · ' : ''}${pid} → P${event.payload.target_id}`;
         case 'elimination':
             return `⚰️ <strong>P${event.payload.eliminated_id}</strong> eliminated (${event.payload.eliminated_role})`;
         case 'death_announcement':

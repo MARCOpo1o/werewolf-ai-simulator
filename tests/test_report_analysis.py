@@ -192,6 +192,23 @@ class DecisionReportTests(unittest.TestCase):
         self.assertIsNone(timeline[0]["source_call_id"])
         self.assertEqual(timeline[0]["link_quality"], "ambiguous")
 
+    def test_vote_stage_disambiguates_main_and_runoff_calls(self):
+        event = {
+            "event_id": "evt_000002", "source_line": 8, "round": 1,
+            "phase": "day_vote", "type": "vote", "channel": "public",
+            "speaker_id": 0, "source_call_id": None,
+            "payload": {
+                "voter_id": 0, "target_id": 2, "vote_stage": "runoff",
+            },
+        }
+        main = self.call("call-main", 5, action="vote")
+        runoff = self.call("call-runoff", 7, action="runoff_vote")
+        for call in (main, runoff):
+            call["phase"] = "day_vote"
+        build_decision_analysis([event], [main, runoff])
+        self.assertEqual(event["source_call_id"], "call-runoff")
+        self.assertEqual(event["link_quality"], "inferred")
+
 
 if __name__ == "__main__":
     unittest.main()

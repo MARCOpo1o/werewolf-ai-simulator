@@ -129,7 +129,7 @@ function eventDescription(event) {
     switch (event.type) {
         case 'message': return p.text || '(empty message)';
         case 'thought': return p.thought || '(empty thought)';
-        case 'vote': return `${playerLabel(p.voter_id)} voted for P${p.target_id}`;
+        case 'vote': return `${p.vote_stage === 'runoff' ? 'Runoff: ' : ''}${playerLabel(p.voter_id)} voted for P${p.target_id}`;
         case 'kill': return `Night target P${p.victim_id}; votes ${JSON.stringify(p.votes || {})}`;
         case 'divine_result': return `Checked P${p.target_id}: ${p.is_werewolf ? 'werewolf' : 'not werewolf'}`;
         case 'death_announcement': return `P${p.victim_id} died (${p.cause || 'unknown cause'})${p.victim_role ? ` · revealed ${p.victim_role}` : ''}`;
