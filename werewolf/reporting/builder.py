@@ -5,6 +5,12 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
+from werewolf.evaluation.validity import classify_game
+from werewolf.reporting.analysis import (
+    build_belief_analysis,
+    build_decision_analysis,
+    build_manipulation_signals,
+)
 from werewolf.reporting.parser import ParsedGameLog, parse_game_log
 from werewolf.reporting.usage import compare_terminal_summary, compute_usage
 
@@ -135,6 +141,22 @@ def build_full_report(
     else:
         eligibility = "eligible"
 
+    validity_rows = []
+    for wrapped in parsed.rows:
+        row = wrapped["record"]
+        if row.get("type") == "event" and not isinstance(row.get("event"), dict):
+            continue
+        validity_rows.append(row)
+    validity = classify_game(validity_rows) if validity_rows else {
+        "clean": False, "violations": {"unrecoverable_log": 1},
+        "policy_version": None,
+    }
+    if not validity["clean"] and integrity != "corrupt":
+        eligibility = "ineligible"
+        exclusion_reasons.extend(
+            f"validity:{name}" for name in validity["violations"]
+        )
+
     if not parsed.llm_calls:
         usage_reliability = "unavailable"
     elif terminal_check["status"] == "mismatched":
@@ -179,8 +201,12 @@ def build_full_report(
         "discussion_cycles": config.get("discussion_cycles"),
         "belief_snapshots": config.get("belief_snapshots"),
         "limits": config.get("limits"),
+        "validity": validity,
         "usage": computed_usage,
     }
+    beliefs = build_belief_analysis(config, timeline)
+    decisions = build_decision_analysis(timeline, parsed.llm_calls)
+    manipulation = build_manipulation_signals(config, timeline, beliefs)
     return {
         "report_schema_version": REPORT_SCHEMA_VERSION,
         "source": {
@@ -196,15 +222,12 @@ def build_full_report(
         "overview": overview,
         "players": players,
         "timeline": timeline,
-        "beliefs": {"available": False, "reason": "not_built_yet"},
+        "beliefs": beliefs,
         "decisions": {
-            "available": bool(parsed.llm_calls or parsed.events),
-            "attempt_groups": dict(calls_by_id),
+            **decisions,
             "missing_strategic_evidence": missing_strategic_evidence,
         },
-        "manipulation_signals": {
-            "available": False, "reason": "not_built_yet",
-        },
+        "manipulation_signals": manipulation,
         "usage": {
             **computed_usage,
             "terminal_consistency": terminal_check,
@@ -216,6 +239,7 @@ def build_full_report(
             "log_schema_version": config.get("log_schema_version"),
             "event_schema_version": config.get("event_schema_version"),
             "belief_schema_version": config.get("belief_schema_version"),
+            "validity_policy_version": validity.get("policy_version"),
             "runtime": config.get("runtime"),
             "report_schema_version": REPORT_SCHEMA_VERSION,
             "analysis_eligibility_policy_version": (

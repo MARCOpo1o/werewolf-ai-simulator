@@ -23,14 +23,26 @@ from __future__ import annotations
 import json
 from collections import Counter
 
-VALIDITY_POLICY_VERSION = 1
+from werewolf.llm.registry import MODEL_REGISTRY, resolved_model_matches
+
+VALIDITY_POLICY_VERSION = 2
 MIN_SNAPSHOT_COVERAGE = 0.95
 
 
-def _model_family_match(requested: str, resolved: str) -> bool:
-    base = requested.split("/")[-1].lower()
-    res = resolved.split("/")[-1].lower()
-    return base in res or res in base
+def _model_identity_match(call: dict) -> bool:
+    requested = call.get("requested_model")
+    resolved = call.get("resolved_model")
+    if not requested or not resolved:
+        return True
+    alias = call.get("model_alias")
+    if alias in MODEL_REGISTRY:
+        return resolved_model_matches(MODEL_REGISTRY[alias], resolved)
+    matching_specs = [
+        spec for spec in MODEL_REGISTRY.values() if spec.model == requested
+    ]
+    if matching_specs:
+        return any(resolved_model_matches(spec, resolved) for spec in matching_specs)
+    return requested == resolved
 
 
 def classify_game(rows: list[dict]) -> dict:
@@ -56,8 +68,7 @@ def classify_game(rows: list[dict]) -> dict:
         if (r.get("parse_method") == "regex" and r.get("validation_ok")
                 and action != "assess_beliefs"):
             violations["regex_recovered_action"] += 1
-        requested, resolved = r.get("requested_model"), r.get("resolved_model")
-        if requested and resolved and not _model_family_match(requested, resolved):
+        if not _model_identity_match(r):
             violations["resolved_model_mismatch"] += 1
 
     if config.get("belief_snapshots"):
@@ -70,7 +81,9 @@ def classify_game(rows: list[dict]) -> dict:
                 emitted += 1
                 if (e.get("payload") or {}).get("valid"):
                     valid += 1
-        if emitted and (valid / emitted) < MIN_SNAPSHOT_COVERAGE:
+        if not emitted:
+            violations["missing_snapshot_instrumentation"] += 1
+        elif (valid / emitted) < MIN_SNAPSHOT_COVERAGE:
             violations["low_snapshot_coverage"] += 1
 
     return {

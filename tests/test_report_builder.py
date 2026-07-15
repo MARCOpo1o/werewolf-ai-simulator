@@ -16,7 +16,7 @@ def call(call_id="call-1", *, cost=0.1, source="provider_reported"):
         "error_category": "completed", "player_id": 0,
         "player_role": "villager", "phase": "day_discuss",
         "required_action": "speak_public", "requested_model": "model-a",
-        "resolved_model": "model-a-v1",
+        "resolved_model": "model-a",
         "usage": {
             "input_tokens": 10, "cached_input_tokens": 0,
             "output_tokens": 5, "reasoning_tokens": 0, "total_tokens": 15,

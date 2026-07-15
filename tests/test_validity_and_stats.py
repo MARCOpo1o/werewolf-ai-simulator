@@ -82,6 +82,12 @@ class ValidityGateTests(unittest.TestCase):
                      resolved="gemini-3.1-flash-lite"),
         ]))
         self.assertTrue(clean["clean"])
+        near_name = classify_game(rows([
+            llm_call(requested="gpt-5.4", resolved="gpt-5.4-nano"),
+        ]))
+        self.assertEqual(
+            near_name["violations"], {"resolved_model_mismatch": 1},
+        )
 
     def test_low_snapshot_coverage_is_dirty(self):
         config = {"type": "config", "belief_snapshots": True}
@@ -92,6 +98,13 @@ class ValidityGateTests(unittest.TestCase):
             rows([llm_call()], config, [snapshot_event(True)] * 20)
         )
         self.assertTrue(ok["clean"])
+
+    def test_enabled_instrumentation_with_zero_snapshots_is_dirty(self):
+        config = {"type": "config", "belief_snapshots": True}
+        result = classify_game(rows([llm_call()], config, []))
+        self.assertEqual(
+            result["violations"], {"missing_snapshot_instrumentation": 1},
+        )
 
     def test_summarize_validity(self):
         summary = summarize_validity([
