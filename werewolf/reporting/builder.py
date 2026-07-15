@@ -18,7 +18,7 @@ from werewolf.reporting.usage import compare_terminal_summary, compute_usage
 
 
 REPORT_SCHEMA_VERSION = 1
-REPORT_BUILD_VERSION = 9
+REPORT_BUILD_VERSION = 10
 ANALYSIS_ELIGIBILITY_POLICY_VERSION = 1
 _AGENT_EVENT_TYPES = {
     "thought", "message", "vote", "belief_snapshot", "divine_result",

@@ -118,6 +118,19 @@ class BeliefReportTests(unittest.TestCase):
         self.assertTrue(retained)
         self.assertTrue(all(not item["snapshot_valid"] for item in retained))
 
+    def test_truthy_valid_strings_and_boolean_probabilities_are_rejected(self):
+        timeline = [
+            snapshot(30, 0, "pre_discussion", {1: True, 2: 0.8}),
+        ]
+        timeline[0]["payload"]["valid"] = "false"
+        beliefs = build_belief_analysis(CONFIG, timeline)
+        self.assertEqual(beliefs["coverage"]["pre_discussion"]["valid"], 0)
+        self.assertEqual(
+            [item["target_id"] for item in beliefs["trajectories"]], [2],
+        )
+        self.assertFalse(beliefs["trajectories"][0]["snapshot_valid"])
+        self.assertEqual(beliefs["checkpoints"][0]["status"], "partial")
+
     def test_checkpoint_records_preserve_missing_and_empty_observations(self):
         timeline = [
             snapshot(20, 0, "pre_discussion", {1: 0.2, 2: 0.8}),

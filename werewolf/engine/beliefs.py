@@ -35,7 +35,7 @@ def coerce_probability(value) -> Optional[float]:
     """Accept 0.65, 1, "0.65"; clamp tiny float drift; reject everything
     else (including percentages like 65 - ambiguity is worse than a null)."""
     if isinstance(value, bool):
-        return 1.0 if value else 0.0
+        return None
     if isinstance(value, (int, float)):
         f = float(value)
     elif isinstance(value, str):

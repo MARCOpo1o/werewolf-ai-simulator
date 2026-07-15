@@ -34,6 +34,7 @@ from collections import defaultdict
 from typing import Optional
 
 from werewolf.engine.beliefs import CHECKPOINT_POST, CHECKPOINT_PRE
+from werewolf.json_safety import as_mapping
 
 METRICS_VERSION = 2
 
@@ -86,26 +87,38 @@ def compute_game_metrics(rows: list[dict]) -> dict:
     coverage = {c: {"emitted": 0, "valid": 0}
                 for c in (CHECKPOINT_PRE, CHECKPOINT_POST)}
     for e in snapshots:
-        payload = e.get("payload") or {}
+        payload = as_mapping(e.get("payload"))
         checkpoint = payload.get("checkpoint")
         if checkpoint not in coverage:
             continue
         coverage[checkpoint]["emitted"] += 1
-        if payload.get("valid"):
+        if payload.get("valid") is True:
             coverage[checkpoint]["valid"] += 1
             snap[(e["round"], e["speaker_id"], checkpoint)] = payload
 
     main_vote: dict[tuple, int] = {}
     for e in events:
         if e.get("type") == "vote":
-            payload = e.get("payload") or {}
+            payload = as_mapping(e.get("payload"))
             key = (e["round"], payload.get("voter_id"))
             if key not in main_vote:
                 main_vote[key] = payload.get("target_id")
 
     def probs(payload) -> dict[int, float]:
-        return {int(k): v for k, v in
-                (payload.get("wolf_probabilities") or {}).items()}
+        parsed = {}
+        for raw_id, value in as_mapping(
+            payload.get("wolf_probabilities")
+        ).items():
+            if isinstance(value, bool):
+                continue
+            try:
+                player_id = int(raw_id)
+                probability = float(value)
+            except (TypeError, ValueError):
+                continue
+            if 0.0 <= probability <= 1.0:
+                parsed[player_id] = probability
+        return parsed
 
     def argmax_set(pmap: dict[int, float]) -> set[int]:
         if not pmap:
@@ -174,10 +187,19 @@ def compute_game_metrics(rows: list[dict]) -> dict:
                 wolf_snap = snap.get((rnd, w, checkpoint))
                 if wolf_snap is None:
                     continue
-                estimates = {
-                    int(k): val for k, val in
-                    (wolf_snap.get("estimated_suspicion_of_me") or {}).items()
-                }
+                estimates = {}
+                for raw_id, value in as_mapping(
+                    wolf_snap.get("estimated_suspicion_of_me")
+                ).items():
+                    if isinstance(value, bool):
+                        continue
+                    try:
+                        observer_id = int(raw_id)
+                        estimate = float(value)
+                    except (TypeError, ValueError):
+                        continue
+                    if 0.0 <= estimate <= 1.0:
+                        estimates[observer_id] = estimate
                 for v in villagers:
                     v_snap = snap.get((rnd, v, checkpoint))
                     if v_snap is None or v not in estimates:

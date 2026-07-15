@@ -78,6 +78,16 @@ class GameMetricsTests(unittest.TestCase):
         self.assertEqual(self.metrics["coverage"]["pre_discussion"],
                          {"emitted": 3, "valid": 3})
 
+    def test_truthy_valid_string_is_not_counted_as_valid(self):
+        rows = build_rows()
+        rows[1]["event"]["payload"]["valid"] = "false"
+        rows[1]["event"]["payload"]["wolf_probabilities"]["2"] = True
+        metrics = compute_game_metrics(rows)
+        self.assertEqual(
+            metrics["coverage"]["pre_discussion"],
+            {"emitted": 3, "valid": 2},
+        )
+
     def test_belief_shift(self):
         shift = self.metrics["belief_shift_toward_wolves"]
         self.assertEqual(shift["n"], 2)

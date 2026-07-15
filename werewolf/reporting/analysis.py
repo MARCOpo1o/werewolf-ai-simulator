@@ -31,6 +31,8 @@ def _probabilities(payload: dict) -> dict[int, float]:
     for raw_id, raw_probability in as_mapping(
         payload.get("wolf_probabilities")
     ).items():
+        if isinstance(raw_probability, bool):
+            continue
         try:
             player_id = int(raw_id)
             probability = float(raw_probability)
@@ -74,7 +76,7 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
         observer = event.get("speaker_id")
         round_number = event.get("round")
         coverage[checkpoint or "unknown"]["emitted"] += 1
-        if payload.get("valid"):
+        if payload.get("valid") is True:
             coverage[checkpoint or "unknown"]["valid"] += 1
         addressable = (
             isinstance(round_number, int) and not isinstance(round_number, bool)
@@ -105,7 +107,7 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
                     squared_error if schema_valid and actual is not None else None
                 ),
                 "brier_schema_applicable": bool(schema_valid and actual is not None),
-                "snapshot_valid": bool(payload.get("valid")),
+                "snapshot_valid": payload.get("valid") is True,
             })
 
     rounds_observers = sorted({(round_, observer) for round_, observer, _ in snapshots})
@@ -123,7 +125,7 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
                 continue
             payload = as_mapping(event.get("payload"))
             usable_count = len(_probabilities(payload))
-            if payload.get("valid") and usable_count:
+            if payload.get("valid") is True and usable_count:
                 status = "valid"
             elif usable_count:
                 status = "partial"
@@ -146,8 +148,8 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
             continue
         pre_payload = as_mapping(pre_event.get("payload"))
         post_payload = as_mapping(post_event.get("payload"))
-        pre_valid = bool(pre_payload.get("valid"))
-        post_valid = bool(post_payload.get("valid"))
+        pre_valid = pre_payload.get("valid") is True
+        post_valid = post_payload.get("valid") is True
         evidence_quality = "valid" if pre_valid and post_valid else "partial"
         pre = _probabilities(pre_payload)
         post = _probabilities(post_payload)
@@ -266,7 +268,14 @@ def expected_actions_for_event(event: dict) -> Optional[set[str]]:
     if event_type == "divine_result":
         return {"seer_divine"}
     if event_type == "thought":
-        return None
+        return {
+            "night_wolf_chat": {"wolf_chat"},
+            "night_wolf_kill": {"choose_wolf_kill"},
+            "night_seer": {"seer_divine"},
+            "day_assess": {"assess_beliefs"},
+            "day_discuss": {"speak_public"},
+            "day_vote": {"vote", "runoff_vote"},
+        }.get(event.get("phase"), set())
     return set()
 
 
@@ -436,12 +445,14 @@ def build_manipulation_signals(
         ):
             continue
         payload = as_mapping(event.get("payload"))
-        if not payload.get("valid"):
+        if payload.get("valid") is not True:
             continue
         checkpoint = payload.get("checkpoint")
         for raw_observer, estimate in as_mapping(
             payload.get("estimated_suspicion_of_me")
         ).items():
+            if isinstance(estimate, bool):
+                continue
             try:
                 observer = int(raw_observer)
                 estimate = float(estimate)

@@ -99,6 +99,8 @@ Belief views may show predicted probabilities, binary outcomes, movement toward 
 
 Every observed player-round has explicit pre- and post-discussion checkpoint records. Each checkpoint is classified as `valid`, `partial`, `invalid`, or `missing`; entirely absent checkpoints remain visible as gaps and are never connected as if a measurement existed.
 
+Snapshot validity requires the literal JSON boolean `true`. Truthy strings are not accepted, and JSON booleans are rejected as probability values rather than being coerced to zero or one.
+
 Malformed nested config, event, belief, usage, and cost values are treated as damaged evidence. The parser records field-specific warnings and continues building the portions of the report supported by valid records.
 
 Manipulation and resistance panels are descriptive, non-causal signals. Causal susceptibility and cross-model conclusions require controlled multi-game experiments and belong in later benchmark work.

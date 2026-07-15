@@ -130,6 +130,17 @@ class ReportBuilderTests(unittest.TestCase):
             report["overview"]["analysis_exclusion_reasons"],
         )
 
+    def test_thought_link_requires_phase_appropriate_action(self):
+        rows = fixture_rows()
+        rows[1]["required_action"] = "choose_wolf_kill"
+        rows[2]["event"].update({
+            "type": "thought", "channel": "moderator_only",
+            "payload": {"thought": "private reasoning"},
+        })
+        report = build_full_report_from_file(self.write(rows))
+        self.assertEqual(report["timeline"][0]["link_quality"], "mismatched")
+        self.assertEqual(report["overview"]["analysis_eligibility"], "ineligible")
+
     def test_kill_vote_call_mappings_are_validated_and_exposed(self):
         game_id = "game_19_kill_links"
         config = fixture_rows(game_id)[0]

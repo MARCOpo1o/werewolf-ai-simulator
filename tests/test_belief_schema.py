@@ -16,10 +16,12 @@ class CoerceProbabilityTests(unittest.TestCase):
         self.assertEqual(coerce_probability(0), 0.0)
         self.assertEqual(coerce_probability("0.4"), 0.4)
         self.assertEqual(coerce_probability(1.0000001), 1.0)  # drift clamped
-        self.assertEqual(coerce_probability(True), 1.0)
 
     def test_invalid_forms(self):
-        for bad in (65, -0.5, "high", None, [0.5], float("nan"), float("inf")):
+        for bad in (
+            True, False, 65, -0.5, "high", None, [0.5],
+            float("nan"), float("inf"),
+        ):
             self.assertIsNone(coerce_probability(bad), bad)
 
 
