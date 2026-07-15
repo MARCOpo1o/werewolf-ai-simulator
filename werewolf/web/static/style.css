@@ -45,6 +45,14 @@ header h1 {
     color: var(--accent);
 }
 
+.history-link {
+    color: var(--text);
+    text-decoration: none;
+    padding: 0.35rem 0.7rem;
+    border: 1px solid var(--bg-light);
+    border-radius: 4px;
+}
+
 #status-bar {
     display: flex;
     gap: 1.5rem;

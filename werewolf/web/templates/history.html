@@ -1,5 +1,58 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Game History</title></head>
-<body><main><h1>Game History</h1><p id="history-loading">Loading persisted games…</p></main></body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Game History · Manipulation Resistance Arena</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/history.css">
+</head>
+<body class="history-page">
+    <header class="history-header">
+        <div>
+            <p class="eyebrow">Manipulation Resistance Arena</p>
+            <h1>Game History</h1>
+            <p class="history-subtitle">Persistent single-game records. No rankings or cross-game claims.</p>
+        </div>
+        <a class="history-back" href="/">← Live game</a>
+    </header>
+
+    <main class="history-shell">
+        <section class="history-toolbar" aria-label="History filters">
+            <label>
+                Search
+                <input id="history-search" type="search" placeholder="Game ID, model, seed…">
+            </label>
+            <label>
+                Status
+                <select id="history-status">
+                    <option value="all">All games</option>
+                    <option value="active">Active</option>
+                    <option value="completed">Completed</option>
+                    <option value="incomplete">Incomplete</option>
+                </select>
+            </label>
+            <button id="history-refresh" type="button">Refresh</button>
+        </section>
+
+        <section class="history-panel" aria-live="polite">
+            <div id="history-loading" class="history-state">Loading persisted games…</div>
+            <div id="history-error" class="history-state history-error hidden"></div>
+            <div id="history-empty" class="history-state hidden">No recorded games match these filters.</div>
+            <div class="history-table-wrap hidden" id="history-table-wrap">
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>Game</th><th>Status</th><th>Outcome</th><th>Models</th>
+                            <th>Seed</th><th>Rounds</th><th>Known cost</th><th>Integrity</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-rows"></tbody>
+                </table>
+            </div>
+            <button id="history-more" class="history-more hidden" type="button">Load more</button>
+        </section>
+    </main>
+    <script src="/static/history.js"></script>
+</body>
 </html>

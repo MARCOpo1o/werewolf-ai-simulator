@@ -170,6 +170,17 @@ class ReportApiTests(unittest.TestCase):
             400,
         )
 
+    def test_history_page_loads_persistent_history_client(self):
+        history = self.client.get("/games")
+        self.assertEqual(history.status_code, 200)
+        text = history.get_data(as_text=True)
+        self.assertIn("Game History", text)
+        self.assertIn("/static/history.js", text)
+        self.assertIn("history-status", text)
+
+        live = self.client.get("/").get_data(as_text=True)
+        self.assertIn('href="/games"', live)
+
 
 if __name__ == "__main__":
     unittest.main()
