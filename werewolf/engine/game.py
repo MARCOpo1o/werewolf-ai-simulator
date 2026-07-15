@@ -28,7 +28,7 @@ from werewolf.engine.beliefs import (
 )
 from werewolf.engine.visibility import build_observation, update_player_seen_index
 from werewolf.engine.validate import validate_action, get_fallback_action, _to_int
-from werewolf.engine.logging import JSONLLogger, ConsoleTranscript
+from werewolf.engine.logging import LOG_SCHEMA_VERSION, JSONLLogger, ConsoleTranscript
 from werewolf.roles.assign import assign_roles
 from werewolf.agents.ai_agent import AIAgent, create_agents
 from werewolf.agents.prompts import get_prompt_version
@@ -41,6 +41,7 @@ from werewolf.engine.limits import (
 from werewolf.llm.ledger import UsageLedger
 from werewolf.llm.provider import GenerationConfig
 from werewolf.llm.records import utc_now_iso
+from werewolf.reporting.runtime import collect_runtime_metadata
 
 _CODE_COMMIT = None
 
@@ -231,6 +232,8 @@ class GameEngine:
 
             self.logger.log_config({
                 "created_at": utc_now_iso(),
+                "log_schema_version": LOG_SCHEMA_VERSION,
+                "runtime": collect_runtime_metadata(),
                 "seed": seed,
                 "n_players": n_players,
                 "n_wolves": n_wolves,

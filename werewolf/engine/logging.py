@@ -3,6 +3,9 @@ import os
 from typing import TextIO
 
 
+LOG_SCHEMA_VERSION = 2
+
+
 class JSONLLogger:
     def __init__(self, output_dir: str, game_id: str):
         os.makedirs(output_dir, exist_ok=True)
