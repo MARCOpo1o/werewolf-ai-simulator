@@ -127,7 +127,8 @@ def parse_game_log(path: str | Path) -> ParsedGameLog:
                 usage = as_mapping(raw_usage)
                 invalid_tokens = [
                     field for field in _TOKEN_FIELDS
-                    if field in usage and nonnegative_int(usage[field]) is None
+                    if field in usage and usage[field] is not None
+                    and nonnegative_int(usage[field]) is None
                 ]
                 if invalid_tokens:
                     parsed.warnings.append(ParseWarning(
@@ -169,6 +170,7 @@ def parse_game_log(path: str | Path) -> ParsedGameLog:
                 invalid_tokens = [
                     field for field in _TOKEN_FIELDS
                     if field in terminal_tokens
+                    and terminal_tokens[field] is not None
                     and nonnegative_int(terminal_tokens[field]) is None
                 ]
                 if invalid_tokens:

@@ -278,6 +278,19 @@ class ReportBuilderTests(unittest.TestCase):
             report["usage"]["terminal_consistency"]["status"], "mismatched",
         )
 
+    def test_unreported_optional_tokens_do_not_warn(self):
+        rows = fixture_rows("game_19_null_tokens")
+        rows[1]["usage"]["cached_input_tokens"] = None
+        rows[1]["usage"]["reasoning_tokens"] = None
+        rows[3]["usage"]["tokens"]["cached_input_tokens"] = None
+        rows[3]["usage"]["tokens"]["reasoning_tokens"] = None
+        report = build_full_report_from_file(self.write(
+            rows, game_id="game_19_null_tokens",
+        ))
+        codes = {warning["code"] for warning in report["source"]["warnings"]}
+        self.assertNotIn("invalid_llm_tokens", codes)
+        self.assertNotIn("invalid_terminal_tokens", codes)
+
 
 if __name__ == "__main__":
     unittest.main()
