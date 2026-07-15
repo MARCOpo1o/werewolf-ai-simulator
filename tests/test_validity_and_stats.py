@@ -99,6 +99,13 @@ class ValidityGateTests(unittest.TestCase):
         )
         self.assertTrue(ok["clean"])
 
+    def test_truthy_snapshot_valid_string_is_not_clean(self):
+        config = {"type": "config", "belief_snapshots": True}
+        result = classify_game(rows(
+            [llm_call()], config, [snapshot_event(valid="false")],
+        ))
+        self.assertEqual(result["violations"], {"low_snapshot_coverage": 1})
+
     def test_enabled_instrumentation_with_zero_snapshots_is_dirty(self):
         config = {"type": "config", "belief_snapshots": True}
         result = classify_game(rows([llm_call()], config, []))

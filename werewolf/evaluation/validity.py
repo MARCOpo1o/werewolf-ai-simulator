@@ -26,7 +26,7 @@ from collections import Counter
 from werewolf.json_safety import as_mapping
 from werewolf.llm.registry import MODEL_REGISTRY, resolved_model_matches
 
-VALIDITY_POLICY_VERSION = 2
+VALIDITY_POLICY_VERSION = 3
 MIN_SNAPSHOT_COVERAGE = 0.95
 
 
@@ -86,7 +86,7 @@ def classify_game(rows: list[dict]) -> dict:
             e = r["event"]
             if e.get("type") == "belief_snapshot":
                 emitted += 1
-                if as_mapping(e.get("payload")).get("valid"):
+                if as_mapping(e.get("payload")).get("valid") is True:
                     valid += 1
         if not emitted:
             violations["missing_snapshot_instrumentation"] += 1
