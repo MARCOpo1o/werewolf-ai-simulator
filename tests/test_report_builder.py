@@ -290,6 +290,10 @@ class ReportBuilderTests(unittest.TestCase):
         codes = {warning["code"] for warning in report["source"]["warnings"]}
         self.assertNotIn("invalid_llm_tokens", codes)
         self.assertNotIn("invalid_terminal_tokens", codes)
+        self.assertEqual(
+            report["usage"]["terminal_consistency"]["status"], "matched",
+        )
+        self.assertEqual(report["overview"]["usage_reliability"], "reliable")
 
 
 if __name__ == "__main__":

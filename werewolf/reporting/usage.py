@@ -158,11 +158,14 @@ def compare_terminal_summary(computed: dict, terminal: dict | None) -> dict:
             })
     terminal_tokens = as_mapping(terminal.get("tokens"))
     for field in TOKEN_FIELDS:
-        if terminal_tokens.get(field) != computed["tokens"].get(field):
+        terminal_value = terminal_tokens.get(field)
+        if terminal_value is None:
+            continue
+        if terminal_value != computed["tokens"].get(field):
             mismatches.append({
                 "field": f"tokens.{field}",
                 "computed": computed["tokens"].get(field),
-                "terminal": terminal_tokens.get(field),
+                "terminal": terminal_value,
             })
     raw_terminal_cost = terminal.get("cost_usd_total")
     terminal_cost = nonnegative_finite_number(raw_terminal_cost)
