@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from werewolf.engine.beliefs import inspect_recorded_probability_map
 from werewolf.json_safety import (
     as_mapping,
     nonnegative_finite_number,
@@ -112,6 +113,33 @@ def parse_game_log(path: str | Path) -> ParsedGameLog:
                         "malformed_event_payload",
                         "Event payload is not an object", source_line,
                     ))
+                payload = as_mapping(event.get("payload"))
+                if event.get("type") == "belief_snapshot" and payload:
+                    if (
+                        "valid" in payload
+                        and not isinstance(payload.get("valid"), bool)
+                    ):
+                        parsed.warnings.append(ParseWarning(
+                            "invalid_belief_valid_flag",
+                            "Belief valid flag is not a JSON boolean",
+                            source_line,
+                        ))
+                    for field_name, allow_none in (
+                        ("wolf_probabilities", False),
+                        ("estimated_suspicion_of_me", True),
+                    ):
+                        if field_name not in payload:
+                            continue
+                        _, probabilities_valid = inspect_recorded_probability_map(
+                            payload.get(field_name), allow_none=allow_none,
+                        )
+                        if not probabilities_valid:
+                            parsed.warnings.append(ParseWarning(
+                                "invalid_belief_probability",
+                                f"Belief {field_name} contains an invalid "
+                                "player ID or probability value",
+                                source_line,
+                            ))
             else:
                 parsed.warnings.append(ParseWarning(
                     "malformed_event", "Event record does not contain an object", source_line,

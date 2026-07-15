@@ -306,6 +306,46 @@ class ReportBuilderTests(unittest.TestCase):
         )
         self.assertEqual(report["overview"]["usage_reliability"], "reliable")
 
+    def test_invalid_belief_value_warns_and_makes_checkpoint_partial(self):
+        rows = fixture_rows("game_20_invalid_belief_value")
+        rows[0]["belief_snapshots"] = True
+        rows[1].update({
+            "phase": "day_assess", "required_action": "assess_beliefs",
+        })
+        rows[2]["event"].update({
+            "phase": "day_assess", "type": "belief_snapshot",
+            "channel": "moderator_only",
+            "payload": {
+                "schema_version": 1, "checkpoint": "pre_discussion",
+                "wolf_probabilities": {"1": True, "2": 0.7},
+                "estimated_suspicion_of_me": None,
+                "valid": True,
+            },
+        })
+        report = build_full_report_from_file(self.write(
+            rows, game_id="game_20_invalid_belief_value",
+        ))
+        codes = {warning["code"] for warning in report["source"]["warnings"]}
+        self.assertIn("invalid_belief_probability", codes)
+        self.assertEqual(report["beliefs"]["checkpoints"][0]["status"], "partial")
+        self.assertFalse(report["overview"]["validity"]["clean"])
+        self.assertEqual(report["overview"]["analysis_eligibility"], "ineligible")
+
+    def test_invalid_belief_valid_flag_warns(self):
+        rows = fixture_rows("game_21_invalid_belief_flag")
+        rows[2]["event"].update({
+            "type": "belief_snapshot", "channel": "moderator_only",
+            "payload": {
+                "schema_version": 1, "checkpoint": "pre_discussion",
+                "wolf_probabilities": {"1": 0.7}, "valid": "false",
+            },
+        })
+        report = build_full_report_from_file(self.write(
+            rows, game_id="game_21_invalid_belief_flag",
+        ))
+        codes = {warning["code"] for warning in report["source"]["warnings"]}
+        self.assertIn("invalid_belief_valid_flag", codes)
+
 
 if __name__ == "__main__":
     unittest.main()

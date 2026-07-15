@@ -33,7 +33,12 @@ import json
 from collections import defaultdict
 from typing import Optional
 
-from werewolf.engine.beliefs import CHECKPOINT_POST, CHECKPOINT_PRE
+from werewolf.engine.beliefs import (
+    CHECKPOINT_POST,
+    CHECKPOINT_PRE,
+    inspect_recorded_probability_map,
+    recorded_belief_payload_valid,
+)
 from werewolf.json_safety import as_mapping
 
 METRICS_VERSION = 2
@@ -92,7 +97,7 @@ def compute_game_metrics(rows: list[dict]) -> dict:
         if checkpoint not in coverage:
             continue
         coverage[checkpoint]["emitted"] += 1
-        if payload.get("valid") is True:
+        if recorded_belief_payload_valid(payload):
             coverage[checkpoint]["valid"] += 1
             snap[(e["round"], e["speaker_id"], checkpoint)] = payload
 
@@ -105,19 +110,9 @@ def compute_game_metrics(rows: list[dict]) -> dict:
                 main_vote[key] = payload.get("target_id")
 
     def probs(payload) -> dict[int, float]:
-        parsed = {}
-        for raw_id, value in as_mapping(
+        parsed, _ = inspect_recorded_probability_map(
             payload.get("wolf_probabilities")
-        ).items():
-            if isinstance(value, bool):
-                continue
-            try:
-                player_id = int(raw_id)
-                probability = float(value)
-            except (TypeError, ValueError):
-                continue
-            if 0.0 <= probability <= 1.0:
-                parsed[player_id] = probability
+        )
         return parsed
 
     def argmax_set(pmap: dict[int, float]) -> set[int]:

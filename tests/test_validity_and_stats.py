@@ -26,7 +26,10 @@ def snapshot_event(valid=True):
     return {"type": "event", "event": {
         "type": "belief_snapshot", "round": 1, "speaker_id": 0,
         "channel": "moderator_only",
-        "payload": {"checkpoint": "pre_discussion", "valid": valid},
+        "payload": {
+            "checkpoint": "pre_discussion", "valid": valid,
+            "wolf_probabilities": {"1": 0.5},
+        },
     }}
 
 
@@ -104,6 +107,15 @@ class ValidityGateTests(unittest.TestCase):
         result = classify_game(rows(
             [llm_call()], config, [snapshot_event(valid="false")],
         ))
+        self.assertEqual(result["violations"], {"low_snapshot_coverage": 1})
+
+    def test_invalid_probability_makes_claimed_valid_snapshot_dirty(self):
+        config = {"type": "config", "belief_snapshots": True}
+        event = snapshot_event(valid=True)
+        event["event"]["payload"]["wolf_probabilities"].update({
+            "2": True,
+        })
+        result = classify_game(rows([llm_call()], config, [event]))
         self.assertEqual(result["violations"], {"low_snapshot_coverage": 1})
 
     def test_enabled_instrumentation_with_zero_snapshots_is_dirty(self):

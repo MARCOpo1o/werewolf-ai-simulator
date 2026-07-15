@@ -101,6 +101,8 @@ Every observed player-round has explicit pre- and post-discussion checkpoint rec
 
 Snapshot validity requires the literal JSON boolean `true`. Truthy strings are not accepted, and JSON booleans are rejected as probability values rather than being coerced to zero or one.
 
+The parser emits `invalid_belief_valid_flag` and `invalid_belief_probability` warnings for these schema failures. If a probability map retains some usable values after rejecting malformed entries, the checkpoint is displayed as `partial` and is excluded from validity-sensitive report and benchmark calculations.
+
 Malformed nested config, event, belief, usage, and cost values are treated as damaged evidence. The parser records field-specific warnings and continues building the portions of the report supported by valid records.
 
 Manipulation and resistance panels are descriptive, non-causal signals. Causal susceptibility and cross-model conclusions require controlled multi-game experiments and belong in later benchmark work.

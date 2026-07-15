@@ -8,6 +8,8 @@ from werewolf.engine.beliefs import (
     BELIEF_SCHEMA_VERSION,
     CHECKPOINT_POST,
     CHECKPOINT_PRE,
+    inspect_recorded_probability_map,
+    recorded_belief_payload_valid,
 )
 from werewolf.json_safety import as_mapping
 
@@ -27,19 +29,9 @@ def _role_sets(config: dict) -> tuple[set[int], set[int], dict[int, dict]]:
 
 
 def _probabilities(payload: dict) -> dict[int, float]:
-    values = {}
-    for raw_id, raw_probability in as_mapping(
+    values, _ = inspect_recorded_probability_map(
         payload.get("wolf_probabilities")
-    ).items():
-        if isinstance(raw_probability, bool):
-            continue
-        try:
-            player_id = int(raw_id)
-            probability = float(raw_probability)
-        except (TypeError, ValueError):
-            continue
-        if 0.0 <= probability <= 1.0:
-            values[player_id] = probability
+    )
     return values
 
 
@@ -76,7 +68,8 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
         observer = event.get("speaker_id")
         round_number = event.get("round")
         coverage[checkpoint or "unknown"]["emitted"] += 1
-        if payload.get("valid") is True:
+        snapshot_valid = recorded_belief_payload_valid(payload)
+        if snapshot_valid:
             coverage[checkpoint or "unknown"]["valid"] += 1
         addressable = (
             isinstance(round_number, int) and not isinstance(round_number, bool)
@@ -107,7 +100,7 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
                     squared_error if schema_valid and actual is not None else None
                 ),
                 "brier_schema_applicable": bool(schema_valid and actual is not None),
-                "snapshot_valid": payload.get("valid") is True,
+                "snapshot_valid": snapshot_valid,
             })
 
     rounds_observers = sorted({(round_, observer) for round_, observer, _ in snapshots})
@@ -125,7 +118,7 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
                 continue
             payload = as_mapping(event.get("payload"))
             usable_count = len(_probabilities(payload))
-            if payload.get("valid") is True and usable_count:
+            if recorded_belief_payload_valid(payload):
                 status = "valid"
             elif usable_count:
                 status = "partial"
@@ -148,8 +141,8 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
             continue
         pre_payload = as_mapping(pre_event.get("payload"))
         post_payload = as_mapping(post_event.get("payload"))
-        pre_valid = pre_payload.get("valid") is True
-        post_valid = post_payload.get("valid") is True
+        pre_valid = recorded_belief_payload_valid(pre_payload)
+        post_valid = recorded_belief_payload_valid(post_payload)
         evidence_quality = "valid" if pre_valid and post_valid else "partial"
         pre = _probabilities(pre_payload)
         post = _probabilities(post_payload)
@@ -445,7 +438,7 @@ def build_manipulation_signals(
         ):
             continue
         payload = as_mapping(event.get("payload"))
-        if payload.get("valid") is not True:
+        if not recorded_belief_payload_valid(payload):
             continue
         checkpoint = payload.get("checkpoint")
         for raw_observer, estimate in as_mapping(

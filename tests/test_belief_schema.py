@@ -4,7 +4,9 @@ from werewolf.engine.beliefs import (
     CHECKPOINT_PRE,
     coerce_probability,
     coerce_prob_map,
+    inspect_recorded_probability_map,
     parse_belief_snapshot,
+    recorded_belief_payload_valid,
     validate_assess_beliefs,
 )
 
@@ -44,6 +46,17 @@ class CoerceProbMapTests(unittest.TestCase):
         parsed, problems = coerce_prob_map([0.1, 0.2], {1})
         self.assertEqual(parsed, {})
         self.assertTrue(problems)
+
+    def test_recorded_map_retains_usable_values_but_marks_partial(self):
+        parsed, fully_valid = inspect_recorded_probability_map({
+            "1": True, "2": 0.7,
+        })
+        self.assertEqual(parsed, {2: 0.7})
+        self.assertFalse(fully_valid)
+        self.assertFalse(recorded_belief_payload_valid({
+            "valid": True,
+            "wolf_probabilities": {"1": True, "2": 0.7},
+        }))
 
 
 class ParseSnapshotTests(unittest.TestCase):

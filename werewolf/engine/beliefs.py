@@ -52,6 +52,50 @@ def coerce_probability(value) -> Optional[float]:
     return None
 
 
+def inspect_recorded_probability_map(
+    raw, *, allow_none: bool = False,
+) -> tuple[dict[int, float], bool]:
+    """Read a probability map already persisted in a log.
+
+    Returns the usable values and whether every recorded key/value was
+    structurally valid. Unlike model-output parsing, this has no expected
+    player set, so it validates only IDs, duplicates, and probability values.
+    """
+    if raw is None and allow_none:
+        return {}, True
+    if not isinstance(raw, dict):
+        return {}, False
+    values: dict[int, float] = {}
+    fully_valid = True
+    for raw_id, raw_probability in raw.items():
+        player_id = _coerce_id(raw_id)
+        probability = coerce_probability(raw_probability)
+        if (
+            player_id is None
+            or player_id in values
+            or probability is None
+        ):
+            fully_valid = False
+            continue
+        values[player_id] = probability
+    return values, fully_valid
+
+
+def recorded_belief_payload_valid(payload) -> bool:
+    """Whether persisted belief evidence can support validity-sensitive use."""
+    if not isinstance(payload, dict) or payload.get("valid") is not True:
+        return False
+    probabilities, probabilities_valid = inspect_recorded_probability_map(
+        payload.get("wolf_probabilities")
+    )
+    if not probabilities or not probabilities_valid:
+        return False
+    _, suspicion_valid = inspect_recorded_probability_map(
+        payload.get("estimated_suspicion_of_me"), allow_none=True,
+    )
+    return suspicion_valid
+
+
 def coerce_prob_map(raw, expected_ids: set[int]) -> tuple[dict[int, float], list[str]]:
     """Parse a {player_id: probability} mapping. Returns (parsed, problems).
     Keys tolerate "P2"/"2"/2; unexpected or unparseable entries are
