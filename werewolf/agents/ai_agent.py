@@ -103,6 +103,7 @@ class AIAgent:
                 "No LLM provider available (missing API key or SDK) - "
                 "using random action."
             )
+            fallback["_source_call_id"] = call_id
             return fallback
 
         errors = []
@@ -177,6 +178,7 @@ class AIAgent:
                 self._record(record)
                 if update_memory and "updated_memory" in parsed:
                     self.memory = parsed["updated_memory"]
+                parsed["_source_call_id"] = call_id
                 logger.debug(f"P{self.player_id} action valid")
                 return parsed
 
@@ -198,6 +200,7 @@ class AIAgent:
         fallback["thought"] = (
             "Not enough information or repeated errors - choosing randomly."
         )
+        fallback["_source_call_id"] = call_id
         return fallback
 
     # ------------------------------------------------------------------

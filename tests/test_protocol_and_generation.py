@@ -45,6 +45,36 @@ def public_messages(rows, round_=1):
 
 
 class DiscussionProtocolTests(unittest.TestCase):
+    def test_events_have_stable_ids_and_call_provenance(self):
+        _, _, rows = run_game()
+        events = [r["event"] for r in rows if r["type"] == "event"]
+        for expected, event in enumerate(events):
+            self.assertEqual(event["id"], expected)
+            self.assertEqual(event["event_id"], f"evt_{expected:06d}")
+            self.assertIn("source_call_id", event)
+            self.assertIn("discussion_cycle", event)
+
+        messages = public_messages(rows)
+        self.assertTrue(all(m["source_call_id"] for m in messages))
+        self.assertTrue(all(
+            m["discussion_cycle"] == m["payload"]["discussion_cycle"]
+            for m in messages
+        ))
+        thoughts_by_call = {
+            event["source_call_id"]: event
+            for event in events
+            if event["type"] == "thought"
+            and event["phase"] == "day_discuss"
+        }
+        for message in messages:
+            thought = thoughts_by_call[message["source_call_id"]]
+            self.assertEqual(
+                thought["discussion_cycle"], message["discussion_cycle"]
+            )
+
+        config = next(r for r in rows if r["type"] == "config")
+        self.assertEqual(config["event_schema_version"], 2)
+
     def test_two_cycles_with_reversed_order(self):
         _, _, rows = run_game()
         messages = public_messages(rows)
@@ -59,6 +89,10 @@ class DiscussionProtocolTests(unittest.TestCase):
         positions = [m["payload"]["speaker_position"] for m in messages
                      if m["payload"]["discussion_cycle"] == 1]
         self.assertEqual(positions, [1, 2, 3])
+        self.assertEqual(
+            [m["discussion_cycle"] for m in messages],
+            [m["payload"]["discussion_cycle"] for m in messages],
+        )
 
     def test_order_is_seeded_and_reproducible(self):
         _, _, rows_a = run_game(seed=31)

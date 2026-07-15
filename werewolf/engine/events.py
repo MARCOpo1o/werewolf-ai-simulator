@@ -2,21 +2,31 @@ import time
 from typing import Optional
 
 
+EVENT_SCHEMA_VERSION = 2
+
+
 def create_event(
     game_state,
     event_type: str,
     channel: str,
     payload: dict,
-    speaker_id: Optional[int] = None
+    speaker_id: Optional[int] = None,
+    *,
+    source_call_id: Optional[str] = None,
+    discussion_cycle: Optional[int] = None,
 ) -> dict:
+    numeric_event_id = game_state.next_event_id()
     event = {
-        "id": game_state.next_event_id(),
+        "id": numeric_event_id,
+        "event_id": f"evt_{numeric_event_id:06d}",
         "t": time.time(),
         "round": game_state.round,
         "phase": game_state.phase,
         "type": event_type,
         "channel": channel,
         "speaker_id": speaker_id,
+        "source_call_id": source_call_id,
+        "discussion_cycle": discussion_cycle,
         "payload": payload
     }
     game_state.events.append(event)
@@ -30,6 +40,8 @@ def create_message_event(
     text: str,
     truncated_from: int = None,
     meta: dict = None,
+    source_call_id: Optional[str] = None,
+    discussion_cycle: Optional[int] = None,
 ) -> dict:
     """`truncated_from` records the original length when a message was cut
     at the bandwidth limit; `meta` carries analysis fields such as
@@ -44,34 +56,47 @@ def create_message_event(
         event_type="message",
         channel=channel,
         payload=payload,
-        speaker_id=speaker_id
+        speaker_id=speaker_id,
+        source_call_id=source_call_id,
+        discussion_cycle=discussion_cycle,
     )
 
 
 def create_thought_event(
     game_state,
     speaker_id: int,
-    thought: str
+    thought: str,
+    *,
+    source_call_id: Optional[str] = None,
+    discussion_cycle: Optional[int] = None,
 ) -> dict:
     return create_event(
         game_state,
         event_type="thought",
         channel="moderator_only",
         payload={"thought": thought},
-        speaker_id=speaker_id
+        speaker_id=speaker_id,
+        source_call_id=source_call_id,
+        discussion_cycle=discussion_cycle,
     )
 
 
 def create_kill_event(
     game_state,
     victim_id: int,
-    kill_votes: dict[int, int]
+    kill_votes: dict[int, int],
+    *,
+    source_call_ids: Optional[list[str]] = None,
 ) -> dict:
     return create_event(
         game_state,
         event_type="kill",
         channel="moderator_only",
-        payload={"victim_id": victim_id, "votes": kill_votes}
+        payload={
+            "victim_id": victim_id,
+            "votes": kill_votes,
+            "source_call_ids": source_call_ids or [],
+        },
     )
 
 
@@ -101,28 +126,34 @@ def create_divine_result_event(
     game_state,
     seer_id: int,
     target_id: int,
-    is_werewolf: bool
+    is_werewolf: bool,
+    *,
+    source_call_id: Optional[str] = None,
 ) -> dict:
     return create_event(
         game_state,
         event_type="divine_result",
         channel="seer_private",
         payload={"target_id": target_id, "is_werewolf": is_werewolf},
-        speaker_id=seer_id
+        speaker_id=seer_id,
+        source_call_id=source_call_id,
     )
 
 
 def create_vote_event(
     game_state,
     voter_id: int,
-    target_id: int
+    target_id: int,
+    *,
+    source_call_id: Optional[str] = None,
 ) -> dict:
     return create_event(
         game_state,
         event_type="vote",
         channel="public",
         payload={"voter_id": voter_id, "target_id": target_id},
-        speaker_id=voter_id
+        speaker_id=voter_id,
+        source_call_id=source_call_id,
     )
 
 
@@ -206,7 +237,9 @@ def create_game_status_event(
 def create_belief_snapshot_event(
     game_state,
     player_id: int,
-    payload: dict
+    payload: dict,
+    *,
+    source_call_id: Optional[str] = None,
 ) -> dict:
     """Moderator-only structured belief snapshot (never visible to players;
     see werewolf/engine/beliefs.py for the payload schema)."""
@@ -215,5 +248,6 @@ def create_belief_snapshot_event(
         event_type="belief_snapshot",
         channel="moderator_only",
         payload=payload,
-        speaker_id=player_id
+        speaker_id=player_id,
+        source_call_id=source_call_id,
     )

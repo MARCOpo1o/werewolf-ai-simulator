@@ -5,6 +5,7 @@ from typing import Optional
 
 from werewolf.engine.state import GameState, PlayerState
 from werewolf.engine.events import (
+    EVENT_SCHEMA_VERSION,
     create_message_event,
     create_thought_event,
     create_kill_event,
@@ -239,6 +240,7 @@ class GameEngine:
                 "trial_index": trial_index,
                 "belief_snapshots": belief_snapshots,
                 "belief_schema_version": BELIEF_SCHEMA_VERSION if belief_snapshots else None,
+                "event_schema_version": EVENT_SCHEMA_VERSION,
                 "generation_config": self.generation_config.to_json_dict(),
                 "requested_generation_config": self.requested_generation_config.to_json_dict(),
                 "requested_reasoning_override": self.reasoning_override,
@@ -521,9 +523,13 @@ class GameEngine:
         for wolf in alive_wolves:
             observation = build_observation(self.state, wolf.id, "wolf_chat")
             response = self._get_agent_action(wolf.id, observation)
+            source_call_id = response.get("_source_call_id")
 
             if response.get("thought"):
-                event = create_thought_event(self.state, wolf.id, response["thought"])
+                event = create_thought_event(
+                    self.state, wolf.id, response["thought"],
+                    source_call_id=source_call_id,
+                )
                 self.logger.log_event(event)
                 self.transcript.print_event(event, self.players)
 
@@ -534,6 +540,7 @@ class GameEngine:
                 event = create_message_event(
                     self.state, "werewolf", wolf.id, text,
                     truncated_from=truncated_from,
+                    source_call_id=source_call_id,
                 )
                 self.logger.log_event(event)
                 self.transcript.print_event(event, self.players)
@@ -543,13 +550,20 @@ class GameEngine:
     def _wolf_kill_vote(self) -> Optional[int]:
         alive_wolves = self.state.get_alive_wolves()
         kill_votes = {}
+        source_call_ids = []
 
         for wolf in alive_wolves:
             observation = build_observation(self.state, wolf.id, "choose_wolf_kill")
             response = self._get_agent_action(wolf.id, observation)
+            source_call_id = response.get("_source_call_id")
+            if source_call_id:
+                source_call_ids.append(source_call_id)
 
             if response.get("thought"):
-                event = create_thought_event(self.state, wolf.id, response["thought"])
+                event = create_thought_event(
+                    self.state, wolf.id, response["thought"],
+                    source_call_id=source_call_id,
+                )
                 self.logger.log_event(event)
                 self.transcript.print_event(event, self.players)
 
@@ -568,7 +582,10 @@ class GameEngine:
         candidates = [t for t, c in vote_counts.items() if c == max_votes]
         victim_id = self.rng.choice(candidates)
 
-        event = create_kill_event(self.state, victim_id, kill_votes)
+        event = create_kill_event(
+            self.state, victim_id, kill_votes,
+            source_call_ids=source_call_ids,
+        )
         self.logger.log_event(event)
 
         return victim_id
@@ -576,9 +593,13 @@ class GameEngine:
     def _seer_divine(self, seer_id: int):
         observation = build_observation(self.state, seer_id, "seer_divine")
         response = self._get_agent_action(seer_id, observation)
+        source_call_id = response.get("_source_call_id")
 
         if response.get("thought"):
-            event = create_thought_event(self.state, seer_id, response["thought"])
+            event = create_thought_event(
+                self.state, seer_id, response["thought"],
+                source_call_id=source_call_id,
+            )
             self.logger.log_event(event)
             self.transcript.print_event(event, self.players)
 
@@ -588,7 +609,10 @@ class GameEngine:
         if target_id is not None and target_id in self.players:
             target = self.players[target_id]
             is_werewolf = target.role == "werewolf"
-            event = create_divine_result_event(self.state, seer_id, target_id, is_werewolf)
+            event = create_divine_result_event(
+                self.state, seer_id, target_id, is_werewolf,
+                source_call_id=source_call_id,
+            )
             self.logger.log_event(event)
             self.transcript.print_event(event, self.players)
 
@@ -625,10 +649,13 @@ class GameEngine:
                     self.state, player_id, "speak_public", turn_context
                 )
                 response = self._get_agent_action(player_id, observation)
+                source_call_id = response.get("_source_call_id")
 
                 if response.get("thought"):
                     event = create_thought_event(
-                        self.state, player_id, response["thought"]
+                        self.state, player_id, response["thought"],
+                        source_call_id=source_call_id,
+                        discussion_cycle=cycle,
                     )
                     self.logger.log_event(event)
                     self.transcript.print_event(event, self.players)
@@ -644,6 +671,8 @@ class GameEngine:
                             "discussion_cycle": cycle,
                             "speaker_position": position + 1,
                         },
+                        source_call_id=source_call_id,
+                        discussion_cycle=cycle,
                     )
                     self.logger.log_event(event)
                     self.transcript.print_event(event, self.players)
@@ -664,16 +693,26 @@ class GameEngine:
             response = self._get_agent_action(
                 player.id, observation, update_memory=False
             )
+            source_call_id = response.get("_source_call_id")
 
             if response.get("thought"):
-                event = create_thought_event(self.state, player.id, response["thought"])
+                event = create_thought_event(
+                    self.state, player.id, response["thought"],
+                    source_call_id=source_call_id,
+                )
                 self.logger.log_event(event)
                 self.transcript.print_event(event, self.players)
 
-            self._emit_belief_snapshot(player.id, response.get("beliefs"), checkpoint)
+            self._emit_belief_snapshot(
+                player.id, response.get("beliefs"), checkpoint,
+                source_call_id=source_call_id,
+            )
             # deliberately NOT calling update_player_seen_index
 
-    def _emit_belief_snapshot(self, player_id: int, raw_beliefs, checkpoint: str):
+    def _emit_belief_snapshot(
+        self, player_id: int, raw_beliefs, checkpoint: str,
+        source_call_id: Optional[str] = None,
+    ):
         alive_ids = [p.id for p in self.state.get_alive_players()]
         snapshot = parse_belief_snapshot(
             raw_beliefs,
@@ -683,7 +722,8 @@ class GameEngine:
             is_wolf=self.players[player_id].role == "werewolf",
         )
         event = create_belief_snapshot_event(
-            self.state, player_id, snapshot.to_payload()
+            self.state, player_id, snapshot.to_payload(),
+            source_call_id=source_call_id,
         )
         self.logger.log_event(event)
 
@@ -694,9 +734,13 @@ class GameEngine:
         for player in alive_players:
             observation = build_observation(self.state, player.id, "vote")
             response = self._get_agent_action(player.id, observation)
+            source_call_id = response.get("_source_call_id")
 
             if response.get("thought"):
-                event = create_thought_event(self.state, player.id, response["thought"])
+                event = create_thought_event(
+                    self.state, player.id, response["thought"],
+                    source_call_id=source_call_id,
+                )
                 self.logger.log_event(event)
                 self.transcript.print_event(event, self.players)
 
@@ -704,14 +748,18 @@ class GameEngine:
                 # Post-discussion snapshot rides inside the vote response;
                 # a malformed one never invalidates the vote itself.
                 self._emit_belief_snapshot(
-                    player.id, response.get("beliefs"), CHECKPOINT_POST
+                    player.id, response.get("beliefs"), CHECKPOINT_POST,
+                    source_call_id=source_call_id,
                 )
 
             action = response.get("action", {})
             target = self._coerce_player_id(action.get("vote_target"))
             if target is not None:
                 votes[player.id] = target
-                event = create_vote_event(self.state, player.id, target)
+                event = create_vote_event(
+                    self.state, player.id, target,
+                    source_call_id=source_call_id,
+                )
                 self.logger.log_event(event)
                 self.transcript.print_event(event, self.players)
 
@@ -757,9 +805,13 @@ class GameEngine:
                 self.state, player.id, "runoff_vote", turn_context
             )
             response = self._get_agent_action(player.id, observation)
+            source_call_id = response.get("_source_call_id")
 
             if response.get("thought"):
-                event = create_thought_event(self.state, player.id, response["thought"])
+                event = create_thought_event(
+                    self.state, player.id, response["thought"],
+                    source_call_id=source_call_id,
+                )
                 self.logger.log_event(event)
                 self.transcript.print_event(event, self.players)
 
@@ -767,7 +819,10 @@ class GameEngine:
             target = self._coerce_player_id(action.get("vote_target"))
             if target is not None:
                 votes[player.id] = target
-                event = create_vote_event(self.state, player.id, target)
+                event = create_vote_event(
+                    self.state, player.id, target,
+                    source_call_id=source_call_id,
+                )
                 self.logger.log_event(event)
                 self.transcript.print_event(event, self.players)
 
