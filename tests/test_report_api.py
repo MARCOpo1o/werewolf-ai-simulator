@@ -159,6 +159,22 @@ class ReportApiTests(unittest.TestCase):
         self.assertTrue(web_app.game_repository.report_path(self.game_id).exists())
         self.assertEqual(response.get_json()["overview"]["display_status"], "incomplete")
 
+    def test_report_cache_invalidates_when_jsonl_changes(self):
+        first = self.client.get(
+            f"/api/games/{self.game_id}/report?include_private=true"
+        ).get_json()
+        self.assertEqual(first["overview"]["completion_status"], "incomplete")
+        with open(web_app.game_repository.log_path(self.game_id), "a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "type": "outcome", "winner": "wolf", "rounds": 1,
+                "remaining": [1],
+            }) + "\n")
+        second = self.client.get(
+            f"/api/games/{self.game_id}/report?include_private=true"
+        ).get_json()
+        self.assertEqual(second["overview"]["completion_status"], "completed")
+        self.assertEqual(second["overview"]["winner"], "wolf")
+
     def test_invalid_paths_and_query_are_rejected(self):
         self.assertEqual(
             self.client.get("/api/games/not-a-game/report").status_code, 404

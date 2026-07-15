@@ -151,7 +151,11 @@ def build_full_report(
         "clean": False, "violations": {"unrecoverable_log": 1},
         "policy_version": None,
     }
-    if not validity["clean"] and integrity != "corrupt":
+    validity["provisional"] = completion != "completed"
+    if (
+        not validity["clean"] and integrity != "corrupt"
+        and completion == "completed"
+    ):
         eligibility = "ineligible"
         exclusion_reasons.extend(
             f"validity:{name}" for name in validity["violations"]

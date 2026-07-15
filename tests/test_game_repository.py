@@ -2,7 +2,9 @@ import json
 import os
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest import mock
 
 from werewolf.reporting.repository import (
     GameRepository,
@@ -143,6 +145,32 @@ class GameRepositoryTests(unittest.TestCase):
         repository = GameRepository(self.root)
         with self.assertRaises(InvalidGameId):
             repository.log_path("../../secret")
+
+    def test_normal_list_requests_do_not_rescan_jsonl(self):
+        game_id = "game_10_once"
+        write_rows(self.root, game_id, [config(game_id, "2026-07-14T10:00:00Z")])
+        repository = GameRepository(self.root)
+        repository.list_games()
+        with mock.patch.object(
+            repository, "_refresh_path", wraps=repository._refresh_path,
+        ) as refresh:
+            repository.list_games()
+        refresh.assert_not_called()
+
+    def test_threaded_incremental_updates_are_serialized_in_process(self):
+        game_id = "game_11_threads"
+        write_rows(self.root, game_id, [config(game_id, "2026-07-14T10:00:00Z")])
+        repository = GameRepository(self.root)
+        repository.rebuild()
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            results = list(executor.map(
+                lambda _: repository.refresh_game(game_id), range(8),
+            ))
+        self.assertTrue(all(result["game_id"] == game_id for result in results))
+        with open(repository.index_path, encoding="utf-8") as handle:
+            index = json.load(handle)
+        self.assertEqual(len(index["games"]), 1)
+        self.assertFalse(list(self.root.glob("*.tmp")))
 
 
 if __name__ == "__main__":

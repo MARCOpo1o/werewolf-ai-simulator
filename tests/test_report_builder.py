@@ -159,6 +159,14 @@ class ReportBuilderTests(unittest.TestCase):
         self.assertEqual(report["overview"]["integrity_status"], "corrupt")
         self.assertEqual(report["overview"]["analysis_eligibility"], "ineligible")
 
+    def test_incomplete_instrumented_log_remains_limited_while_validity_is_provisional(self):
+        rows = fixture_rows()[:-2]
+        rows[0]["belief_snapshots"] = True
+        report = build_full_report_from_file(self.write(rows))
+        self.assertEqual(report["overview"]["completion_status"], "incomplete")
+        self.assertEqual(report["overview"]["analysis_eligibility"], "limited")
+        self.assertTrue(report["overview"]["validity"]["provisional"])
+
 
 if __name__ == "__main__":
     unittest.main()

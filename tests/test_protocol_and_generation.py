@@ -173,6 +173,13 @@ class GenerationConfigTests(unittest.TestCase):
         config_row = next(r for r in rows if r["type"] == "config")
         self.assertEqual(config_row["generation_config"]["temperature"], 0.0)
         self.assertEqual(config_row["discussion_cycles"], 2)
+        self.assertIn("python", config_row["runtime"])
+        self.assertIn("flask", config_row["runtime"])
+        self.assertIn("litellm", config_row["runtime"])
+        self.assertIn("xai_sdk", config_row["runtime"])
+        self.assertRegex(
+            config_row["runtime"]["requirements_sha256"], r"^[0-9a-f]{64}$",
+        )
         self.assertEqual(
             config_row["limits"]["public_message_max_chars"],
             PUBLIC_MESSAGE_MAX_CHARS,
