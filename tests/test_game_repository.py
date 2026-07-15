@@ -11,6 +11,7 @@ from werewolf.reporting.repository import (
     InvalidCursor,
     InvalidGameId,
 )
+from werewolf.reporting.builder import REPORT_BUILD_VERSION, REPORT_SCHEMA_VERSION
 
 
 def write_rows(root: Path, game_id: str, rows: list[dict]) -> Path:
@@ -99,6 +100,41 @@ class GameRepositoryTests(unittest.TestCase):
         os.unlink(self.root / "index.json")
         rebuilt = GameRepository(self.root).list_games()
         self.assertEqual(rebuilt["games"][0]["game_id"], game_id)
+
+    def test_fresh_metadata_with_stale_build_version_is_rebuilt(self):
+        game_id = "game_1_stale_build"
+        write_rows(self.root, game_id, completed_rows(game_id))
+        repository = GameRepository(self.root)
+        repository.rebuild()
+        for path in (
+            repository.meta_path(game_id), repository.report_path(game_id),
+        ):
+            with open(path, encoding="utf-8") as handle:
+                payload = json.load(handle)
+            payload["report_build_version"] = REPORT_BUILD_VERSION - 1
+            if path == repository.meta_path(game_id):
+                payload["analysis_eligibility"] = "stale-value"
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle)
+
+        history = GameRepository(self.root).list_games()["games"][0]
+        self.assertEqual(history["report_schema_version"], REPORT_SCHEMA_VERSION)
+        self.assertEqual(history["report_build_version"], REPORT_BUILD_VERSION)
+        self.assertNotEqual(history["analysis_eligibility"], "stale-value")
+
+    def test_rebuild_regenerates_missing_report_sidecar(self):
+        game_id = "game_1_missing_report"
+        write_rows(self.root, game_id, completed_rows(game_id))
+        repository = GameRepository(self.root)
+        repository.rebuild()
+        repository.report_path(game_id).unlink()
+        self.assertTrue(repository.meta_path(game_id).exists())
+
+        repository.rebuild()
+        self.assertTrue(repository.report_path(game_id).exists())
+        with open(repository.report_path(game_id), encoding="utf-8") as handle:
+            report = json.load(handle)
+        self.assertEqual(report["report_build_version"], REPORT_BUILD_VERSION)
 
     def test_active_is_runtime_overlay_never_persisted(self):
         game_id = "game_2_active"

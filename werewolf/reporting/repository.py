@@ -17,7 +17,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from werewolf.reporting.builder import build_full_report, build_history_summary
+from werewolf.reporting.builder import (
+    REPORT_BUILD_VERSION,
+    REPORT_SCHEMA_VERSION,
+    build_full_report,
+    build_history_summary,
+)
 from werewolf.reporting.parser import ParsedGameLog, parse_game_log
 
 
@@ -253,8 +258,11 @@ class GameRepository:
         old = _read_json(self.meta_path(game_id)) or {}
         if (
             old.get("meta_schema_version") == META_SCHEMA_VERSION
+            and old.get("report_schema_version") == REPORT_SCHEMA_VERSION
+            and old.get("report_build_version") == REPORT_BUILD_VERSION
             and old.get("source_size") == stat.st_size
             and old.get("source_mtime_ns") == stat.st_mtime_ns
+            and self._report_sidecar_matches(game_id, stat)
         ):
             return old
 
@@ -301,6 +309,20 @@ class GameRepository:
         }
         atomic_json_write(self.meta_path(game_id), entry)
         return entry
+
+    def _report_sidecar_matches(self, game_id: str, stat: os.stat_result) -> bool:
+        report = _read_json(self.report_path(game_id))
+        if report is None:
+            return False
+        source = report.get("source")
+        if not isinstance(source, dict):
+            return False
+        return (
+            report.get("report_schema_version") == REPORT_SCHEMA_VERSION
+            and report.get("report_build_version") == REPORT_BUILD_VERSION
+            and source.get("size_bytes") == stat.st_size
+            and source.get("mtime_ns") == stat.st_mtime_ns
+        )
 
     @staticmethod
     def _record_timestamps(parsed: ParsedGameLog) -> list[str]:
