@@ -24,6 +24,8 @@ Normal `/api/games` requests read the in-memory derived index and do not rescan 
 
 Derived JSON uses a same-directory temporary file, `flush()`, `fsync()`, and `os.replace()`. Directory syncing is best-effort where supported. Sidecar freshness uses source size and `mtime_ns`; built reports also retain the canonical JSONL SHA-256.
 
+History metadata is projected from the same versioned full-report builder used by the report page. It does not independently reinterpret validity, eligibility, usage, or cost. `REPORT_BUILD_VERSION` invalidates cached reports whenever derived analysis semantics change, even when the transport schema is unchanged.
+
 History sorts descending by immutable `(created_at, game_id)`. Timestamp precedence is:
 
 1. the canonical config/start record;
@@ -64,6 +66,8 @@ event_id = evt_<zero-padded numeric id>
 All events produced by one agent response share its `source_call_id`; each event still has its own `event_id`. Discussion events record `discussion_cycle` directly.
 
 The parser preserves `source_line` and distinguishes exact, inferred, ambiguous, and unavailable links. Legacy decision links are inferred only when player, action, phase, round, ordering, and uniqueness support one candidate. Missing legacy fields remain unavailable rather than being fabricated.
+
+For new event-schema logs, day votes explicitly record `vote_stage` as `main` or `runoff`. Aggregate wolf-kill events record a `vote_source_call_ids` mapping from each voting wolf to the call that produced that vote. The validated filename and route ID are canonical; a conflicting config ID produces a `game_id_mismatch` warning and can never redirect report links.
 
 ## Privacy contract
 

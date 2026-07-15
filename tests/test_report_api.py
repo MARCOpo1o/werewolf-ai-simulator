@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from werewolf.reporting.privacy import build_public_report
 from werewolf.reporting.repository import GameRepository
@@ -151,6 +152,31 @@ class ReportApiTests(unittest.TestCase):
         with open(web_app.game_repository.meta_path(self.game_id), encoding="utf-8") as f:
             self.assertNotIn("display_status", json.load(f))
 
+    def test_new_game_appears_in_already_reconciled_history(self):
+        # Reconcile first, matching the browser sequence from the audit.
+        self.client.get("/api/games")
+        new_game_id = "game_8_new_active"
+        path = web_app.game_repository.log_path(new_game_id)
+        path.write_text(json.dumps({
+            "type": "config", "game_id": new_game_id,
+            "created_at": "2026-07-14T11:00:00Z", "seed": 8,
+            "n_players": 4, "n_wolves": 1, "n_seers": 0,
+            "event_schema_version": 3, "model": "model",
+            "model_alias": "model",
+        }) + "\n", encoding="utf-8")
+        engine = mock.Mock()
+        engine.state = SimpleNamespace(game_id=new_game_id)
+        engine.get_state_dict.return_value = {"game_id": new_game_id}
+        with mock.patch.object(
+            web_app, "create_engine_from_payload", return_value=engine,
+        ):
+            created = self.client.post("/api/new", json={"model": "fast"})
+        self.assertEqual(created.status_code, 200)
+        games = self.client.get("/api/games").get_json()["games"]
+        active = next(game for game in games if game["game_id"] == new_game_id)
+        self.assertEqual(active["completion_status"], "incomplete")
+        self.assertEqual(active["display_status"], "active")
+
     def test_report_survives_without_active_engine_and_is_cached(self):
         response = self.client.get(
             f"/api/games/{self.game_id}/report?include_private=true"
@@ -213,6 +239,11 @@ class ReportApiTests(unittest.TestCase):
 
         live = self.client.get("/").get_data(as_text=True)
         self.assertIn('href="/games"', live)
+        javascript = (
+            Path(__file__).parents[1] / "werewolf" / "web" / "static" / "app.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Open forensic report", javascript)
+        self.assertIn("display.replaceChildren(result, report)", javascript)
 
     def test_report_page_has_forensic_sections_without_calibration_claims(self):
         response = self.client.get(f"/games/{self.game_id}")

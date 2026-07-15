@@ -370,6 +370,7 @@ function renderReproducibility(report) {
         'Belief schema': repro.belief_schema_version,
         'Validity policy': repro.validity_policy_version,
         'Report schema': repro.report_schema_version,
+        'Report build': repro.report_build_version,
         'Eligibility policy': repro.analysis_eligibility_policy_version,
         'Python': runtime.python,
         'xAI SDK': runtime.xai_sdk,
