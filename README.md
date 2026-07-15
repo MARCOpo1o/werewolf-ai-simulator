@@ -72,6 +72,17 @@ Open [http://localhost:5000](http://localhost:5000). The setup supports a Quick 
 
 The JSON API exposes `/api/models`, `/api/models/<alias>/health-check`, `/api/new`, `/api/advance`, `/api/state`, and `/api/usage`. Web game creation accepts curated aliases only; CLI tools continue to support full provider model IDs.
 
+Completed and interrupted games remain available at `/games`. Each `/games/<game_id>` page is a persisted, single-game forensic report with a filterable timeline, belief changes, decision attempts, reliability diagnostics, cost accounting, and reproducibility metadata. Reports default to a server-generated spoiler-safe projection. Revealing private data refetches the report from the server; it is spoiler protection for this trusted local app, not an authorization boundary.
+
+The related APIs are:
+
+- `GET /api/games` — stable cursor-paginated game history
+- `GET /api/games/<game_id>/report` — spoiler-safe report by default
+- `GET /api/games/<game_id>/report?include_private=true` — complete forensic report, with `Cache-Control: no-store`
+- `GET /api/games/<game_id>/raw` — canonical JSONL download, with `Cache-Control: no-store`
+
+JSONL remains canonical. Rebuildable metadata, report sidecars, and `outputs/games/index.json` only accelerate history and report reads. Reconciliation runs once on first history access, incrementally after a game completes or a report is requested, and explicitly through `GameRepository.rebuild()` for tests and maintenance. Normal history requests read the derived index instead of rescanning every log. See [the single-game report contract](docs/single-game-report.md) for status, privacy, storage, and compatibility details.
+
 ## Running batch trials (CLI)
 
 ```bash
@@ -130,7 +141,6 @@ Game logs are written to `outputs/games/` (JSONL per game, gitignored): regenera
 
 ## Next steps
 
-- Persisted single-game forensic reports and game history
 - Aggregate experiment dashboard for crossed model matchups
 - Replayable checkpoints and counterfactual branches (inject different deceptive arguments into one exact state, measure causal belief shifts)
 - Pre-run cost estimation from historical game records
@@ -141,7 +151,11 @@ Game logs are written to `outputs/games/` (JSONL per game, gitignored): regenera
 werewolf/
   __main__.py           # CLI entry (python -m werewolf)
   web/
-    app.py              # Web UI server + JSON API (incl. /api/usage)
+    app.py              # Live game, history, report UI, and JSON APIs
+  reporting/
+    repository.py       # Rebuildable game index and atomic derived storage
+    builder.py          # Versioned single-game forensic report
+    privacy.py          # Allowlisted spoiler-safe report projection
   cli/
     run_game.py         # Single-game CLI
     run_trials.py       # Batch trial runner + aggregate summaries
