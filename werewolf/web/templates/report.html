@@ -55,8 +55,8 @@
             <div id="belief-unavailable" class="empty-state hidden"></div>
             <div id="belief-content">
                 <article class="panel chart-panel"><h3>Wolf probability over checkpoints</h3><div id="belief-chart" class="belief-chart"></div></article>
-                <article class="panel"><h3>Pre/post discussion changes</h3><div class="table-wrap"><table><thead><tr><th>Round</th><th>Observer</th><th>Target</th><th>Pre</th><th>Post</th><th>Δ</th><th>Toward truth</th><th>Influential speaker</th></tr></thead><tbody id="belief-change-rows"></tbody></table></div></article>
-                <article class="panel"><h3>Per-prediction probability accuracy</h3><p class="panel-note">A value is labeled as a Brier-score contribution only when the versioned belief schema defines a valid binary probability.</p><div class="table-wrap"><table><thead><tr><th>Checkpoint</th><th>Observer</th><th>Target</th><th>Probability</th><th>Actual</th><th>Squared error</th><th>Schema-valid contribution</th></tr></thead><tbody id="belief-accuracy-rows"></tbody></table></div></article>
+                <article class="panel"><h3>Pre/post discussion changes</h3><div class="table-wrap"><table><thead><tr><th>Round</th><th>Observer</th><th>Target</th><th>Pre</th><th>Post</th><th>Δ</th><th>Toward truth</th><th>Evidence</th><th>Influential speaker</th></tr></thead><tbody id="belief-change-rows"></tbody></table></div></article>
+                <article class="panel"><h3>Per-prediction probability accuracy</h3><p class="panel-note">A value is labeled as a Brier-score contribution only when the versioned belief schema defines a valid binary probability. Hollow pink points and “Partial / invalid” rows are retained for inspection but excluded from revision conclusions.</p><div class="table-wrap"><table><thead><tr><th>Checkpoint</th><th>Observer</th><th>Target</th><th>Probability</th><th>Snapshot</th><th>Actual</th><th>Squared error</th><th>Schema-valid contribution</th></tr></thead><tbody id="belief-accuracy-rows"></tbody></table></div></article>
             </div>
         </section>
 

@@ -225,9 +225,28 @@ function renderBeliefChart(trajectories, observer) {
     targets.forEach((target, targetIndex) => {
         const targetPoints = points.filter(item => item.target_id === target);
         const lookup = new Map(targetPoints.map(item => [`${item.round}:${item.checkpoint}`, item]));
-        const coords = keys.map((key, index) => lookup.has(key) ? `${x(index)},${y(lookup.get(key).probability)}` : null).filter(Boolean);
         const actualWolf = targetPoints.some(item => item.actual_is_wolf === true);
-        svg.append(svgNode('polyline', { points: coords.join(' '), fill: 'none', stroke: colors[targetIndex % colors.length], 'stroke-width': actualWolf ? 4 : 2, 'stroke-dasharray': actualWolf ? '8 4' : '' }));
+        const color = colors[targetIndex % colors.length];
+        let segment = [];
+        const flushSegment = () => {
+            if (segment.length > 1) {
+                svg.append(svgNode('polyline', { points: segment.join(' '), fill: 'none', stroke: color, 'stroke-width': actualWolf ? 4 : 2, 'stroke-dasharray': actualWolf ? '8 4' : '' }));
+            }
+            segment = [];
+        };
+        keys.forEach((key, index) => {
+            const point = lookup.get(key);
+            if (!point) { flushSegment(); return; }
+            const xx = x(index), yy = y(point.probability);
+            segment.push(`${xx},${yy}`);
+            svg.append(svgNode('circle', {
+                cx: xx, cy: yy, r: point.snapshot_valid ? 4 : 6,
+                class: `chart-point ${point.snapshot_valid ? 'valid' : 'invalid'}`,
+                fill: point.snapshot_valid ? color : 'none',
+                stroke: point.snapshot_valid ? color : '#fb7185',
+            }));
+        });
+        flushSegment();
         const legend = svgNode('text', { x: width - right + 18, y: top + 18 + targetIndex * 22, class: 'chart-legend' }); legend.textContent = `P${target}${actualWolf ? ' · actual wolf' : ''}`; svg.append(legend);
     });
     container.append(svg);
@@ -251,13 +270,13 @@ function renderBeliefs(report) {
         const changes = document.getElementById('belief-change-rows'); changes.replaceChildren();
         for (const item of (beliefs.changes || []).filter(change => change.observer_id === observer)) {
             const row = el('tr');
-            [item.round, playerLabel(item.observer_id), `P${item.target_id}`, fmt.percent(item.pre_probability), fmt.percent(item.post_probability), fmt.number(item.delta), fmt.number(item.movement_toward_truth), item.most_influential_recent_speaker === null || item.most_influential_recent_speaker === undefined ? 'Not recorded' : playerLabel(item.most_influential_recent_speaker)].forEach(value => row.append(el('td', fmt.value(value))));
+            [item.round, playerLabel(item.observer_id), `P${item.target_id}`, fmt.percent(item.pre_probability), fmt.percent(item.post_probability), fmt.number(item.delta), fmt.number(item.movement_toward_truth), item.evidence_quality, item.most_influential_recent_speaker === null || item.most_influential_recent_speaker === undefined ? 'Not recorded' : playerLabel(item.most_influential_recent_speaker)].forEach(value => row.append(el('td', fmt.value(value))));
             changes.append(row);
         }
         const accuracy = document.getElementById('belief-accuracy-rows'); accuracy.replaceChildren();
         for (const item of (beliefs.trajectories || []).filter(point => point.observer_id === observer)) {
             const row = el('tr');
-            [item.checkpoint, playerLabel(item.observer_id), `P${item.target_id}`, fmt.percent(item.probability), item.actual_is_wolf === null ? 'Unknown' : item.actual_is_wolf ? 'Wolf' : 'Not wolf', fmt.number(item.squared_error), item.brier_schema_applicable ? fmt.number(item.brier_score_contribution) : 'Not applicable'].forEach(value => row.append(el('td', fmt.value(value))));
+            [item.checkpoint, playerLabel(item.observer_id), `P${item.target_id}`, fmt.percent(item.probability), item.snapshot_valid ? 'Valid' : 'Partial / invalid', item.actual_is_wolf === null ? 'Unknown' : item.actual_is_wolf ? 'Wolf' : 'Not wolf', fmt.number(item.squared_error), item.brier_schema_applicable ? fmt.number(item.brier_score_contribution) : 'Not applicable'].forEach(value => row.append(el('td', fmt.value(value))));
             accuracy.append(row);
         }
     };

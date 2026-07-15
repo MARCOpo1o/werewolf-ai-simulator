@@ -225,6 +225,12 @@ class ReportApiTests(unittest.TestCase):
             self.assertIn(f'id="{section}"', text)
         self.assertIn("/static/report.js", text)
         self.assertNotIn("calibration", text.lower())
+        javascript = (
+            Path(__file__).parents[1] / "werewolf" / "web" / "static" / "report.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("flushSegment", javascript)
+        self.assertIn("point.snapshot_valid ? 'valid' : 'invalid'", javascript)
+        self.assertIn("item.evidence_quality", javascript)
 
 
 if __name__ == "__main__":

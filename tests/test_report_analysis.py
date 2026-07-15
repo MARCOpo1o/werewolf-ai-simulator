@@ -17,7 +17,10 @@ CONFIG = {
 }
 
 
-def snapshot(event_id, player, checkpoint, probs, *, suspicion=None, influential=None):
+def snapshot(
+    event_id, player, checkpoint, probs, *, suspicion=None, influential=None,
+    valid=True,
+):
     return {
         "id": event_id, "event_id": f"evt_{event_id:06d}",
         "source_line": event_id + 2, "round": 1, "phase": "day_assess",
@@ -32,7 +35,7 @@ def snapshot(event_id, player, checkpoint, probs, *, suspicion=None, influential
             "estimated_suspicion_of_me": (
                 {str(k): v for k, v in suspicion.items()} if suspicion else None
             ),
-            "valid": True,
+            "valid": valid,
         },
     }
 
@@ -96,6 +99,25 @@ class BeliefReportTests(unittest.TestCase):
         self.assertIsNone(item["brier_score_contribution"])
         self.assertFalse(item["brier_schema_applicable"])
 
+    def test_partial_snapshots_are_inspectable_but_do_not_create_revisions(self):
+        timeline = belief_timeline()
+        timeline[4]["payload"]["valid"] = False
+        beliefs = build_belief_analysis(CONFIG, timeline)
+        partial = [
+            item for item in beliefs["changes"] if item["observer_id"] == 0
+        ]
+        self.assertTrue(partial)
+        self.assertTrue(all(item["evidence_quality"] == "partial" for item in partial))
+        self.assertFalse(any(
+            item["observer_id"] == 0 for item in beliefs["revisions"]
+        ))
+        retained = [
+            item for item in beliefs["trajectories"]
+            if item["event_id"] == "evt_000004"
+        ]
+        self.assertTrue(retained)
+        self.assertTrue(all(not item["snapshot_valid"] for item in retained))
+
     def test_manipulation_signals_are_noncausal_and_source_only(self):
         timeline = belief_timeline()
         beliefs = build_belief_analysis(CONFIG, timeline)
@@ -107,6 +129,34 @@ class BeliefReportTests(unittest.TestCase):
             signals["candidate_episodes"][0]["most_influential_recent_speaker"], 2,
         )
         self.assertEqual(len(signals["wolf_suspicion_awareness"]), 4)
+
+    def test_wolf_observers_do_not_contaminate_village_resistance(self):
+        config = {
+            "belief_schema_version": 1,
+            "role_map": {
+                "0": {"role": "villager", "team": "village"},
+                "1": {"role": "werewolf", "team": "wolf"},
+                "2": {"role": "werewolf", "team": "wolf"},
+            },
+        }
+        timeline = [
+            snapshot(10, 0, "pre_discussion", {1: 0.2, 2: 0.8}),
+            snapshot(11, 0, "post_discussion", {1: 0.2, 2: 0.8}),
+            snapshot(12, 1, "pre_discussion", {0: 0.2, 2: 0.8}),
+            snapshot(13, 1, "post_discussion", {0: 0.9, 2: 0.1}),
+        ]
+        beliefs = build_belief_analysis(config, timeline)
+        self.assertTrue(any(
+            item["observer_id"] == 1 and item["revision"] == "harmful"
+            for item in beliefs["revisions"]
+        ))
+        signals = build_manipulation_signals(config, timeline, beliefs)
+        signal_observers = {
+            item["observer_id"]
+            for key in ("wolf_suspicion_changes", "harmful_revisions", "resistance_signals")
+            for item in signals[key]
+        }
+        self.assertEqual(signal_observers, {0})
 
 
 class DecisionReportTests(unittest.TestCase):

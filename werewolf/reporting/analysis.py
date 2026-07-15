@@ -106,6 +106,9 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
             continue
         pre_payload = pre_event.get("payload") or {}
         post_payload = post_event.get("payload") or {}
+        pre_valid = bool(pre_payload.get("valid"))
+        post_valid = bool(post_payload.get("valid"))
+        evidence_quality = "valid" if pre_valid and post_valid else "partial"
         pre = _probabilities(pre_payload)
         post = _probabilities(post_payload)
         for target in sorted(set(pre) & set(post)):
@@ -120,10 +123,17 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
                 ),
                 "pre_event_id": pre_event.get("event_id"),
                 "post_event_id": post_event.get("event_id"),
+                "pre_snapshot_valid": pre_valid,
+                "post_snapshot_valid": post_valid,
+                "evidence_quality": evidence_quality,
                 "most_influential_recent_speaker": post_payload.get(
                     "most_influential_recent_speaker"
                 ),
             })
+        # Partial values remain visible in trajectories and changes, but they
+        # cannot support harmful/beneficial or retention conclusions.
+        if not (pre_valid and post_valid):
+            continue
         pre_top, post_top = _top(pre), _top(post)
         if not pre_top or not post_top or not wolves:
             continue
@@ -188,6 +198,9 @@ def build_belief_analysis(config: dict, timeline: list[dict]) -> dict:
             ),
             "vote_observations": sum(
                 r["vote_matches_post_belief"] is not None for r in revisions
+            ),
+            "partial_changes": sum(
+                item["evidence_quality"] == "partial" for item in changes
             ),
         },
     }
@@ -327,7 +340,11 @@ def build_manipulation_signals(
 
     suspicion_changes = []
     for change in beliefs.get("changes", []):
-        if change.get("target_id") not in wolves:
+        if (
+            change.get("target_id") not in wolves
+            or change.get("observer_id") not in village
+            or change.get("evidence_quality") != "valid"
+        ):
             continue
         item = dict(change)
         item["wolf_suspicion_recovery"] = -change["delta"]
@@ -339,13 +356,15 @@ def build_manipulation_signals(
     trajectories = beliefs.get("trajectories", [])
     actual = {
         (item["round"], item["observer_id"], item["checkpoint"], item["target_id"]):
-        item["probability"] for item in trajectories
+        item["probability"] for item in trajectories if item.get("snapshot_valid")
     }
     awareness = []
     for event in timeline:
         if event.get("type") != "belief_snapshot" or event.get("speaker_id") not in wolves:
             continue
         payload = event.get("payload") or {}
+        if not payload.get("valid"):
+            continue
         checkpoint = payload.get("checkpoint")
         for raw_observer, estimate in (payload.get("estimated_suspicion_of_me") or {}).items():
             try:
@@ -366,7 +385,10 @@ def build_manipulation_signals(
                 "absolute_error": abs(estimate - observed),
             })
 
-    revisions = beliefs.get("revisions", [])
+    revisions = [
+        item for item in beliefs.get("revisions", [])
+        if item.get("observer_id") in village
+    ]
     return {
         "available": True,
         "causal": False,
