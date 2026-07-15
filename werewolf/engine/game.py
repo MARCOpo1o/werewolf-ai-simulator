@@ -40,6 +40,7 @@ from werewolf.engine.limits import (
 )
 from werewolf.llm.ledger import UsageLedger
 from werewolf.llm.provider import GenerationConfig
+from werewolf.llm.records import utc_now_iso
 
 _CODE_COMMIT = None
 
@@ -229,6 +230,7 @@ class GameEngine:
             self._pending_victim_id: Optional[int] = None
 
             self.logger.log_config({
+                "created_at": utc_now_iso(),
                 "seed": seed,
                 "n_players": n_players,
                 "n_wolves": n_wolves,
