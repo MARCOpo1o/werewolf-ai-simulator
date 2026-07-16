@@ -325,6 +325,19 @@ class TrialState:
                                                  TRIAL_INTERRUPTED)
         )
 
+    @property
+    def last_terminal_type(self) -> Optional[str]:
+        """Most recent terminal state, if every attempt is closed.
+
+        The runner uses this to keep explicit failures opt-in on resume:
+        an interrupted attempt can be recovered automatically, whereas a
+        failed one may have spent money under a known-bad condition.
+        """
+        if not self.attempts:
+            return None
+        terminal = self.attempts[-1]["terminal"]
+        return terminal["record_type"] if terminal else None
+
 
 @dataclass
 class ReplayState:

@@ -429,12 +429,19 @@ def _runnable_entries(
         trial = writer.state.trials.get(entry["trial_id"])
         if trial is not None and trial.completed:
             continue
-        attempts = trial.attempt_count if trial else 0
-        if attempts < max_attempts:
+        if trial is None:
             runnable.append(entry)
-        elif retry_failed:
-            # --retry-failed grants exactly one extra attempt per
-            # invocation to trials exhausted by failures/interruptions.
+            continue
+
+        attempts = trial.attempt_count
+        terminal_type = trial.last_terminal_type
+        if terminal_type == TRIAL_INTERRUPTED and attempts < max_attempts:
+            # Interruption is an unknown execution state. Retry it within
+            # the pinned attempt budget after reconciliation.
+            runnable.append(entry)
+        elif terminal_type == TRIAL_FAILED and retry_failed:
+            # Explicit execution failures are never retried by --resume.
+            # Each --retry-failed invocation grants one deliberate retry.
             runnable.append(entry)
         else:
             exhausted.append(entry)

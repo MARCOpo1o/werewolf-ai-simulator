@@ -251,18 +251,22 @@ class RunnerRecoveryTests(unittest.TestCase):
 
 
 class RunnerRetryTests(unittest.TestCase):
-    def test_failures_exhaust_then_retry_failed_grants_extra_attempt(self):
+    def test_failures_require_retry_failed_even_before_attempt_budget(self):
         with tempfile.TemporaryDirectory() as tmp:
             write_manifest(tmp, make_manifest(seeds=(9001,)))
             counts = run(tmp, engine_factory=boom_factory)
             self.assertEqual(counts["failed"], 1)
+            # An explicit failure is not retried by ordinary resume.
             counts = run(tmp, resume=True, engine_factory=boom_factory)
-            self.assertEqual(counts["failed"], 1)
-            # max_trial_attempts=2 exhausted
-            counts = run(tmp, resume=True)
             self.assertEqual(counts["skipped_exhausted"], 1)
             self.assertEqual(counts["completed"], 0)
-            # --retry-failed grants one more attempt, this time healthy
+            # --retry-failed grants a deliberate second attempt.
+            counts = run(tmp, retry_failed=True, engine_factory=boom_factory)
+            self.assertEqual(counts["failed"], 1)
+            # It remains opt-in even after exhausting the normal budget.
+            counts = run(tmp, resume=True)
+            self.assertEqual(counts["skipped_exhausted"], 1)
+            # A subsequent --retry-failed attempt can use a repaired setup.
             counts = run(tmp, retry_failed=True)
             self.assertEqual(counts["completed"], 1)
             snapshot = read_journal(journal_path(tmp, "exp1"))
