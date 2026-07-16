@@ -417,6 +417,14 @@ class AnalyzeV1Tests(unittest.TestCase):
         self.assertEqual(
             all_completed["fallback_game_rate"]["numerator"], 1,
         )
+        share = all_completed[
+            "clean_eligible_share_of_verified_completed"
+        ]
+        self.assertEqual(share["numerator"], 11)
+        self.assertEqual(share["denominator"], 12)
+        self.assertTrue(
+            analysis["completed_not_clean_eligible_reason_counts"]
+        )
 
     def test_win_rates_have_exact_denominators(self):
         analysis = run_analysis(self._sources())
@@ -561,6 +569,31 @@ class AnalyzeV1Tests(unittest.TestCase):
         self.assertAlmostEqual(
             operational["cost"]["by_record_type_usd"]["trial_completed"],
             0.048,
+        )
+        scheduled = analysis["scheduled_trial_outcomes"]
+        self.assertEqual(scheduled["overall"]["completed"], 12)
+        self.assertEqual(
+            scheduled["overall"]["scheduled_completion_rate"], 1.0,
+        )
+        self.assertEqual(
+            scheduled["per_condition"]["cond_a"]["completed"], 6,
+        )
+
+    def test_scheduled_rates_use_lifecycle_states_not_completed_games(self):
+        sources = self._sources()[:-1]
+        sources.append(make_source(
+            "cond_b", 6, record_type="trial_failed",
+        ))
+        analysis = run_analysis(sources)
+        scheduled = analysis["scheduled_trial_outcomes"]
+        self.assertEqual(scheduled["overall"]["scheduled"], 12)
+        self.assertEqual(scheduled["overall"]["completed"], 11)
+        self.assertEqual(scheduled["overall"]["failed"], 1)
+        self.assertAlmostEqual(
+            scheduled["overall"]["scheduled_completion_rate"], 11 / 12,
+        )
+        self.assertAlmostEqual(
+            scheduled["overall"]["final_failed_trial_rate"], 1 / 12,
         )
 
     def test_failed_work_cost_is_included(self):

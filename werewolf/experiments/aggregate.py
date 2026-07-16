@@ -575,12 +575,13 @@ def _view_metrics(games: list, bootstrap: dict, label: str) -> dict:
         **(boot(by_seed(lambda g: 1.0 if g["clean"] else 0.0),
                 mean_statistic, "clean_game_rate") or {}),
     }
-    metrics["clean_eligible_completion_rate"] = {
+    metrics["clean_eligible_share_of_verified_completed"] = {
         "numerator": clean_eligible_games, "denominator": total,
         **(boot(by_seed(
             lambda g: 1.0 if g["clean"]
             and g["analysis_eligibility"] == "eligible" else 0.0,
-        ), mean_statistic, "clean_eligible_completion_rate") or {}),
+        ), mean_statistic,
+            "clean_eligible_share_of_verified_completed") or {}),
     }
     metrics["fallback_game_rate"] = {
         "numerator": fallback_games, "denominator": total,
@@ -1014,15 +1015,82 @@ def analyze_v1(
             health_cost += usd
             health_cost_known += 1
 
+    schedule = manifest["execution_contract"]["schedule"]
+
+    def scheduled_outcomes(entries: list) -> dict:
+        counts = defaultdict(int)
+        trial_by_key = {}
+        for trial in replay_state.trials.values():
+            if not trial.attempts:
+                continue
+            started = trial.attempts[0]["started"]
+            trial_by_key[(
+                started["condition_id"], started["seed"],
+                started["repetition"],
+            )] = trial
+        for entry in entries:
+            trial = replay_state.trials.get(entry["trial_id"])
+            if trial is None:
+                trial = trial_by_key.get((
+                    entry["condition_id"], entry["seed"],
+                    entry["repetition"],
+                ))
+            if trial is None:
+                counts["pending"] += 1
+            elif trial.completed:
+                counts["completed"] += 1
+            elif trial.open_attempt is not None:
+                counts["running"] += 1
+            elif trial.last_terminal_type == "trial_failed":
+                counts["failed"] += 1
+            elif trial.last_terminal_type == "trial_interrupted":
+                counts["interrupted"] += 1
+            else:
+                counts["pending"] += 1
+        total_scheduled = len(entries)
+        incomplete = sum(counts[name] for name in (
+            "interrupted", "pending", "running",
+        ))
+        return {
+            "scheduled": total_scheduled,
+            "completed": counts["completed"],
+            "failed": counts["failed"],
+            "interrupted": counts["interrupted"],
+            "pending": counts["pending"],
+            "running": counts["running"],
+            "scheduled_completion_rate": (
+                counts["completed"] / total_scheduled
+                if total_scheduled else None
+            ),
+            "final_failed_trial_rate": (
+                counts["failed"] / total_scheduled
+                if total_scheduled else None
+            ),
+            "final_interrupted_or_pending_rate": (
+                incomplete / total_scheduled if total_scheduled else None
+            ),
+        }
+
+    scheduled = {
+        "overall": scheduled_outcomes(schedule),
+        "per_condition": {
+            condition_id: scheduled_outcomes([
+                entry for entry in schedule
+                if entry["condition_id"] == condition_id
+            ])
+            for condition_id in sorted(
+                manifest["execution_contract"]["conditions"]
+            )
+        },
+    }
+
     operational = {
         "attempts": {
             **dict(attempt_counts),
             "open_or_abandoned": open_attempts,
             "total": sum(attempt_counts.values()) + open_attempts,
         },
-        "scheduled_trials": len(
-            manifest["execution_contract"]["schedule"]
-        ),
+        "scheduled_trials": len(schedule),
         "completed_trials": sum(
             1 for trial in replay_state.trials.values() if trial.completed
         ),
@@ -1040,6 +1108,15 @@ def analyze_v1(
         },
     }
 
+    not_clean_reason_counts = defaultdict(int)
+    for game in views[VIEW_NOT_CLEAN]:
+        reasons = set(game["violations"])
+        reasons.update(game["analysis_exclusion_reasons"])
+        if not reasons:
+            reasons.add("not_clean_or_ineligible_unspecified")
+        for reason in reasons:
+            not_clean_reason_counts[reason] += 1
+
     return {
         "aggregate_analysis_version": AGGREGATE_ANALYSIS_VERSION,
         "comparison_method_version": COMPARISON_METHOD_VERSION,
@@ -1055,11 +1132,16 @@ def analyze_v1(
             {k: game[k] for k in (
                 "trial_id", "attempt_id", "game_id", "condition_id",
                 "seed", "repetition", "winner", "rounds", "recovered",
-                "clean", "violations",
+                "clean", "violations", "analysis_eligibility",
+                "analysis_exclusion_reasons", "usage_reliability",
             )}
             for game in eligible_games
         ],
         "analytically_ineligible": ineligible,
+        "completed_not_clean_eligible_reason_counts": dict(
+            sorted(not_clean_reason_counts.items())
+        ),
         "comparisons": comparisons,
+        "scheduled_trial_outcomes": scheduled,
         "operational": operational,
     }

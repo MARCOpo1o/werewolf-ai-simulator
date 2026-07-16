@@ -79,8 +79,9 @@ function renderOverview() {
     );
     const notice = document.getElementById('benchmark-integrity');
     const ineligible = state.summary.analysis?.analytically_ineligible || [];
-    notice.classList.toggle('hidden', !ineligible.length);
-    notice.textContent = ineligible.length ? `${ineligible.length} completed source(s) are analytically ineligible because canonical evidence is missing or changed after completion. They remain visible below and are excluded from authoritative totals.` : '';
+    const strategic = (state.summary.analysis?.games || []).filter(game => game.analysis_eligibility !== 'eligible');
+    notice.classList.toggle('hidden', !ineligible.length && !strategic.length);
+    notice.textContent = (ineligible.length || strategic.length) ? `${ineligible.length} completed source(s) have missing or changed canonical evidence; ${strategic.length} verified completed game(s) are strategically limited or ineligible. They remain visible below with reasons and are excluded from clean-eligible comparisons.` : '';
     const selected = clear('selected-metrics');
     for (const id of ['retry_rate', 'repair_rate', 'vote_belief_alignment', 'harmful_revision', 'correct_belief_retention', 'probability_movement_toward_wolves', 'wolf_suspicion_awareness_error', 'brier_post_discussion']) {
         const metric = metrics[id];
@@ -91,9 +92,11 @@ function renderOverview() {
 function renderConditions() {
     const rows = clear('condition-rows');
     const conditions = state.summary.analysis?.views?.[state.view]?.per_condition || {};
+    const scheduled = state.summary.analysis?.scheduled_trial_outcomes?.per_condition || {};
     for (const [condition, metrics] of Object.entries(conditions)) {
         const row = document.createElement('tr');
         cell(row, condition); cell(row, value(metrics.games, 0)); cell(row, value(metrics.seed_count, 0));
+        cell(row, percent(scheduled[condition]?.scheduled_completion_rate)); cell(row, percent(scheduled[condition]?.final_failed_trial_rate));
         cell(row, metricEstimate(metrics.village_win_rate)); cell(row, metricEstimate(metrics.wolf_win_rate));
         cell(row, metricEstimate(metrics.clean_game_rate)); cell(row, metricEstimate(metrics.fallback_game_rate)); cell(row, money(metrics.cost?.cost_per_game_usd)); rows.append(row);
     }
@@ -125,8 +128,11 @@ function renderOperational() {
     const operational = state.summary.analysis?.operational || {};
     const attempts = operational.attempts || {};
     const target = clear('operational-metrics');
+    const scheduled = state.summary.analysis?.scheduled_trial_outcomes?.overall || {};
     target.append(
-        card('Scheduled trials', value(operational.scheduled_trials, 0), `${operational.completed_trials || 0} completed`),
+        card('Scheduled completion', percent(scheduled.scheduled_completion_rate), `${scheduled.completed || 0} / ${scheduled.scheduled || 0} trials`),
+        card('Final failed trials', percent(scheduled.final_failed_trial_rate), `${scheduled.failed || 0} scheduled trials`),
+        card('Interrupted or pending', percent(scheduled.final_interrupted_or_pending_rate), `${(scheduled.interrupted || 0) + (scheduled.pending || 0) + (scheduled.running || 0)} scheduled trials`),
         card('Operational attempts', value(attempts.total, 0), `${attempts.trial_failed || 0} failed · ${attempts.trial_interrupted || 0} interrupted`),
         card('Health checks', value(operational.cost?.health_checks, 0), money(operational.cost?.health_checks_usd)),
         card('Sources excluded', value(operational.cost?.sources_excluded_from_totals, 0), operational.cost?.complete ? 'Cost evidence complete' : 'Cost evidence partial'),
@@ -135,12 +141,12 @@ function renderOperational() {
     const games = state.summary.analysis?.games || [];
     for (const game of games) {
         const row = document.createElement('tr');
-        cell(row, game.trial_id); cell(row, game.attempt_id); cell(row, value(game.seed)); cell(row, game.condition_id); cell(row, game.winner || '—'); cell(row, game.clean ? 'Yes' : 'No'); cell(row, 'verified');
+        cell(row, game.trial_id); cell(row, game.attempt_id); cell(row, value(game.seed)); cell(row, game.condition_id); cell(row, game.winner || '—'); cell(row, game.clean ? 'Yes' : 'No'); cell(row, game.analysis_eligibility || 'unavailable'); cell(row, (game.analysis_exclusion_reasons || []).join(', ') || '—'); cell(row, game.usage_reliability || 'unavailable'); cell(row, 'verified');
         const forensic = document.createElement('td'); const link = document.createElement('a'); link.href = `/experiments/${encodeURIComponent(experimentId)}/games/${encodeURIComponent(game.game_id)}`; link.textContent = game.game_id; forensic.append(link); row.append(forensic); rows.append(row);
     }
     for (const source of state.summary.analysis?.analytically_ineligible || []) {
         const row = document.createElement('tr');
-        cell(row, source.trial_id); cell(row, source.attempt_id); cell(row, value(source.seed)); cell(row, source.condition_id); cell(row, '—'); cell(row, '—'); cell(row, source.source_status); cell(row, 'Unavailable'); rows.append(row);
+        cell(row, source.trial_id); cell(row, source.attempt_id); cell(row, value(source.seed)); cell(row, source.condition_id); cell(row, '—'); cell(row, '—'); cell(row, 'ineligible'); cell(row, source.reason || source.source_status); cell(row, 'unavailable'); cell(row, source.source_status); cell(row, 'Unavailable'); rows.append(row);
     }
 }
 

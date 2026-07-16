@@ -129,6 +129,8 @@ class ExperimentApiTests(unittest.TestCase):
             / "experiment.js"
         ).read_text(encoding="utf-8")
         self.assertIn("analysis-view", dashboard)
+        self.assertIn("analysis_exclusion_reasons", dashboard)
+        self.assertIn("scheduled_trial_outcomes", dashboard)
         self.assertIn("/experiments/${encodeURIComponent(experimentId)}/games/", dashboard)
         self.assertNotIn("method: 'POST'", dashboard)
 

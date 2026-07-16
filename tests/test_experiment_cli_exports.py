@@ -101,6 +101,9 @@ class ExportTests(unittest.TestCase):
                             for r in rows))
         self.assertTrue(all(r["winner"] in ("wolf", "village")
                             for r in rows))
+        self.assertTrue(all(r["analysis_eligibility"]
+                            for r in rows))
+        self.assertTrue(all(r["usage_reliability"] for r in rows))
 
     def test_metrics_export_is_long_form(self):
         rows = read_csv(self.directory / "metrics.csv")
@@ -108,6 +111,9 @@ class ExportTests(unittest.TestCase):
         self.assertIn("village_win_rate", metric_ids)
         self.assertIn("retry_rate", metric_ids)
         self.assertIn("brier_post_discussion", metric_ids)
+        self.assertIn(
+            "clean_eligible_share_of_verified_completed", metric_ids,
+        )
         views = {r["analysis_view"] for r in rows}
         self.assertEqual(
             views,

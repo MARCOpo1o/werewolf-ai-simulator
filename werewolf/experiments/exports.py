@@ -31,7 +31,7 @@ PROVENANCE_FIELDS = [
 # Metrics exported in long form from each view/condition scope.
 _SCALAR_METRICS = (
     "village_win_rate", "wolf_win_rate", "clean_game_rate",
-    "clean_eligible_completion_rate",
+    "clean_eligible_share_of_verified_completed",
     "fallback_game_rate", "fallback_decision_group_rate", "retry_rate",
     "repair_rate", "parse_failure_rate", "invalid_action_rate",
     "probability_movement_toward_wolves", "initial_correctness",
@@ -89,7 +89,8 @@ def write_summary_exports(root, experiment_id: str, summary: dict) -> Path:
     trial_fields = PROVENANCE_FIELDS + [
         "trial_id", "attempt_id", "game_id", "seed", "repetition",
         "winner", "rounds", "recovered", "clean", "violations",
-        "source_status",
+        "analysis_eligibility", "analysis_exclusion_reasons",
+        "usage_reliability", "source_status",
     ]
     trial_rows = []
     for game in analysis["games"]:
@@ -109,6 +110,11 @@ def write_summary_exports(root, experiment_id: str, summary: dict) -> Path:
             "recovered": game["recovered"],
             "clean": game["clean"],
             "violations": ";".join(sorted(game["violations"])) or "",
+            "analysis_eligibility": game["analysis_eligibility"],
+            "analysis_exclusion_reasons": ";".join(sorted(
+                game["analysis_exclusion_reasons"]
+            )),
+            "usage_reliability": game["usage_reliability"],
             "source_status": "verified",
         })
     for source in analysis["analytically_ineligible"]:
@@ -127,6 +133,9 @@ def write_summary_exports(root, experiment_id: str, summary: dict) -> Path:
             "recovered": "",
             "clean": "",
             "violations": "",
+            "analysis_eligibility": "ineligible",
+            "analysis_exclusion_reasons": source.get("reason", ""),
+            "usage_reliability": "unavailable",
             "source_status": source["source_status"],
         })
     _write_csv(directory / "trials.csv", trial_fields, trial_rows)
