@@ -72,7 +72,8 @@ def adjustment_fingerprint(
 
 
 def unique_health_targets(
-    conditions: dict, generation: Optional[dict]
+    conditions: dict, generation: Optional[dict], *,
+    request_timeout_seconds: int = 120,
 ) -> list:
     """One target per unique model/effective-generation fingerprint."""
     requested = generation_from_dict(generation)
@@ -89,6 +90,7 @@ def unique_health_targets(
                 "requested_model": spec.model,
                 "provider": spec.provider,
                 "effective_generation": effective.to_json_dict(),
+                "request_timeout_seconds": request_timeout_seconds,
             })
     return [targets[key] for key in sorted(targets)]
 
@@ -123,7 +125,9 @@ def probe_model(target: dict, *, provider=None) -> dict:
         "sanitized_error": None,
     }
     if provider is None:
-        build = build_provider(spec)
+        build = build_provider(
+            spec, timeout=target.get("request_timeout_seconds", 120),
+        )
         if not build.ok:
             status = (
                 "missing_key"

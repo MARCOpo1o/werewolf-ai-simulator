@@ -91,6 +91,34 @@ class AgentRecordingTests(unittest.TestCase):
         self.assertEqual(summary["cost_ticks_total"], 11000)
         self.assertEqual(summary["retries"], 1)
 
+    def test_manifest_style_max_attempts_limits_agent_requests(self):
+        provider = FakeProvider([
+            success_result(text="not json", cost_ticks=100),
+            success_result(VALID_VOTE, cost_ticks=200),
+        ])
+        ledger = UsageLedger()
+        agent = AIAgent(
+            player_id=1, role="villager", team="village", provider=provider,
+            model="fake-model-1", ledger=ledger, max_attempts=1,
+        )
+        run_act(agent, make_observation())
+        self.assertEqual(provider.calls_made, 1)
+        self.assertEqual(len(ledger.records), 2)  # API attempt + fallback
+
+    def test_manifest_retry_categories_override_provider_hint(self):
+        provider = FakeProvider([
+            error_result(ErrorCategory.RATE_LIMITED, retryable=True),
+            success_result(VALID_VOTE),
+        ])
+        ledger = UsageLedger()
+        agent = AIAgent(
+            player_id=1, role="villager", team="village", provider=provider,
+            model="fake-model-1", ledger=ledger,
+            retryable_error_categories={"timeout"},
+        )
+        run_act(agent, make_observation())
+        self.assertEqual(provider.calls_made, 1)
+
     def test_invalid_action_then_successful_retry_shares_call_id(self):
         invalid = {"thought": "t", "say": None, "action": {"vote_target": 99}}
         provider = FakeProvider([

@@ -30,7 +30,7 @@ from werewolf.engine.visibility import build_observation, update_player_seen_ind
 from werewolf.engine.validate import validate_action, get_fallback_action, _to_int
 from werewolf.engine.logging import LOG_SCHEMA_VERSION, JSONLLogger, ConsoleTranscript
 from werewolf.roles.assign import assign_roles
-from werewolf.agents.ai_agent import AIAgent, create_agents
+from werewolf.agents.ai_agent import AIAgent, MAX_RETRIES, create_agents
 from werewolf.agents.prompts import get_prompt_version
 from werewolf.engine.limits import (
     PUBLIC_MESSAGE_MAX_CHARS,
@@ -106,6 +106,10 @@ class GameEngine:
         allow_provider_fallback: bool = False,
         action_failure_policy: str = "fallback",
         max_rounds: int = None,
+        agent_action_max_attempts: int = MAX_RETRIES,
+        retryable_error_categories: Optional[list[str]] = None,
+        retry_backoff: str = "none",
+        request_timeout_seconds: int = 120,
     ):
         """role_models: optional {"werewolf": <alias-or-model-id>,
         "villager": ..., "seer": ...} for heterogeneous games (separates
@@ -152,6 +156,23 @@ class GameEngine:
         if max_rounds is not None and max_rounds < 1:
             raise ValueError("max_rounds must be >= 1 when set")
         self.max_rounds = max_rounds
+        if (not isinstance(agent_action_max_attempts, int)
+                or isinstance(agent_action_max_attempts, bool)
+                or agent_action_max_attempts < 1):
+            raise ValueError("agent_action_max_attempts must be >= 1")
+        if retry_backoff != "none":
+            raise ValueError("Only retry_backoff='none' is supported")
+        if (not isinstance(request_timeout_seconds, int)
+                or isinstance(request_timeout_seconds, bool)
+                or request_timeout_seconds < 1):
+            raise ValueError("request_timeout_seconds must be >= 1")
+        if retryable_error_categories is not None and not all(
+                isinstance(category, str) for category in retryable_error_categories):
+            raise ValueError("retryable_error_categories must contain strings")
+        self.agent_action_max_attempts = agent_action_max_attempts
+        self.retryable_error_categories = retryable_error_categories
+        self.retry_backoff = retry_backoff
+        self.request_timeout_seconds = request_timeout_seconds
         self._closed = False
         self._aborted = False
         if discussion_cycles < 1:
@@ -198,7 +219,10 @@ class GameEngine:
                 self.model = spec.model
                 selected_provider = provider
                 if selected_provider is None and api_key:
-                    build = build_provider(spec, api_key=api_key)
+                    build = build_provider(
+                        spec, api_key=api_key,
+                        timeout=self.request_timeout_seconds,
+                    )
                     selected_provider = build.provider
                     if not build.ok and not self.allow_provider_fallback:
                         raise RuntimeError(
@@ -221,6 +245,9 @@ class GameEngine:
                     model_alias=model_alias,
                     generation=self.generation_config,
                     action_failure_policy=self.action_failure_policy,
+                    max_attempts=self.agent_action_max_attempts,
+                    retryable_error_categories=self.retryable_error_categories,
+                    retry_backoff=self.retry_backoff,
                 )
                 assignment = {
                     "alias": spec.alias,
@@ -269,6 +296,10 @@ class GameEngine:
                 "discussion_cycles": self.discussion_cycles,
                 "action_failure_policy": self.action_failure_policy,
                 "max_rounds": self.max_rounds,
+                "agent_action_max_attempts": self.agent_action_max_attempts,
+                "retryable_error_categories": self.retryable_error_categories,
+                "retry_backoff": self.retry_backoff,
+                "request_timeout_seconds": self.request_timeout_seconds,
                 "role_models": self.role_models_resolved,
                 "limits": limits_dict(),
                 "code_commit": get_code_commit(),
@@ -312,7 +343,9 @@ class GameEngine:
             else:
                 cache_key = (spec.provider, spec.model, spec.api_key_env)
                 if cache_key not in provider_cache:
-                    build = build_provider(spec)
+                    build = build_provider(
+                        spec, timeout=self.request_timeout_seconds,
+                    )
                     if not build.ok and not self.allow_provider_fallback:
                         raise RuntimeError(
                             f"Provider for role {role} is unavailable "
@@ -358,6 +391,9 @@ class GameEngine:
                     self.reasoning_override,
                 ),
                 action_failure_policy=self.action_failure_policy,
+                max_attempts=self.agent_action_max_attempts,
+                retryable_error_categories=self.retryable_error_categories,
+                retry_backoff=self.retry_backoff,
             )
         # There is no single effective configuration in a heterogeneous game.
         self.generation_config = self.requested_generation_config

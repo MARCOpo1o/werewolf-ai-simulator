@@ -65,12 +65,30 @@ class AIAgent:
         reasoning_effort: Optional[str] = None,
         generation: Optional[GenerationConfig] = None,
         action_failure_policy: str = "fallback",
+        max_attempts: int = MAX_RETRIES,
+        retryable_error_categories: Optional[set[str]] = None,
+        retry_backoff: str = "none",
     ):
         if action_failure_policy not in ("fallback", "abort_game"):
             raise ValueError(
                 f"Unknown action_failure_policy: {action_failure_policy!r}"
             )
         self.action_failure_policy = action_failure_policy
+        if (not isinstance(max_attempts, int) or isinstance(max_attempts, bool)
+                or max_attempts < 1):
+            raise ValueError("max_attempts must be a positive integer")
+        if retry_backoff != "none":
+            raise ValueError("Only retry_backoff='none' is supported")
+        if retryable_error_categories is not None:
+            if not all(isinstance(item, str) for item in retryable_error_categories):
+                raise ValueError("retryable_error_categories must contain strings")
+            self.retryable_error_categories = frozenset(
+                retryable_error_categories
+            )
+        else:
+            self.retryable_error_categories = None
+        self.max_attempts = max_attempts
+        self.retry_backoff = retry_backoff
         self.player_id = player_id
         self.role = role
         self.team = team
@@ -132,9 +150,11 @@ class AIAgent:
 
         errors = []
         attempts_made = 0
-        for attempt in range(1, MAX_RETRIES + 1):
+        for attempt in range(1, self.max_attempts + 1):
             attempts_made = attempt
-            logger.debug(f"P{self.player_id} attempt {attempt}/{MAX_RETRIES}")
+            logger.debug(
+                f"P{self.player_id} attempt {attempt}/{self.max_attempts}"
+            )
             user_prompt = self._build_user_prompt(observation, errors)
 
             if self.show_prompts:
@@ -162,7 +182,15 @@ class AIAgent:
                     f"{result.error_message}"
                 )
                 self._record(record)
-                if result.retryable is False:
+                category = (
+                    result.error_category.value
+                    if result.error_category is not None else None
+                )
+                if self.retryable_error_categories is not None:
+                    should_retry = category in self.retryable_error_categories
+                else:
+                    should_retry = result.retryable is not False
+                if not should_retry:
                     break  # retrying cannot help (auth, context window, ...)
                 continue
 
@@ -551,6 +579,9 @@ def create_agents(
     reasoning_effort: Optional[str] = None,
     generation: Optional[GenerationConfig] = None,
     action_failure_policy: str = "fallback",
+    max_attempts: int = MAX_RETRIES,
+    retryable_error_categories: Optional[set[str]] = None,
+    retry_backoff: str = "none",
 ) -> dict[int, AIAgent]:
     """Backward-compatible factory. If no provider is injected, one is
     built from (model, api_key) via the registry; with no key or SDK the
@@ -578,6 +609,9 @@ def create_agents(
             reasoning_effort=reasoning_effort,
             generation=generation,
             action_failure_policy=action_failure_policy,
+            max_attempts=max_attempts,
+            retryable_error_categories=retryable_error_categories,
+            retry_backoff=retry_backoff,
         )
 
     return agents

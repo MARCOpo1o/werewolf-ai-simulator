@@ -267,7 +267,9 @@ def _safe_initialization_error(exc: Exception, secret: str = "") -> str:
     return text[:300] or exc.__class__.__name__
 
 
-def build_provider(spec: ModelSpec, api_key: Optional[str] = None) -> ProviderBuildResult:
+def build_provider(
+    spec: ModelSpec, api_key: Optional[str] = None, *, timeout: int = 120,
+) -> ProviderBuildResult:
     """Construct a provider and preserve why construction was unavailable."""
     key = api_key if api_key is not None else get_api_key(spec)
     if not key:
@@ -280,7 +282,7 @@ def build_provider(spec: ModelSpec, api_key: Optional[str] = None) -> ProviderBu
     if spec.provider == "xai":
         try:
             from werewolf.llm.xai_provider import XAIProvider
-            provider = XAIProvider(api_key=key)
+            provider = XAIProvider(api_key=key, timeout=timeout)
         except (ImportError, ModuleNotFoundError) as exc:
             return ProviderBuildResult(
                 status=ProviderBuildStatus.DEPENDENCY_UNAVAILABLE,
@@ -304,7 +306,7 @@ def build_provider(spec: ModelSpec, api_key: Optional[str] = None) -> ProviderBu
     elif spec.provider == "litellm":
         try:
             from werewolf.llm.litellm_provider import LiteLLMProvider
-            provider = LiteLLMProvider(api_key=key)
+            provider = LiteLLMProvider(api_key=key, timeout=timeout)
         except (ImportError, ModuleNotFoundError) as exc:
             return ProviderBuildResult(
                 status=ProviderBuildStatus.DEPENDENCY_UNAVAILABLE,

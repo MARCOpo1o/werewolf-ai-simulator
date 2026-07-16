@@ -374,6 +374,10 @@ def _default_engine_factory(entry: dict, manifest: dict, games_dir: Path):
         allow_provider_fallback=policies["allow_provider_fallback"],
         action_failure_policy=policies["action_failure_policy"],
         max_rounds=policies["max_rounds"],
+        agent_action_max_attempts=policies["agent_action_max_attempts"],
+        retryable_error_categories=policies["retryable_errors"],
+        retry_backoff=policies["retry_backoff"],
+        request_timeout_seconds=policies["request_timeout_seconds"],
     )
 
 
@@ -550,6 +554,7 @@ def run_experiment(
         }
         for target in unique_health_targets(
             execution["conditions"], execution["generation"],
+            request_timeout_seconds=policies["request_timeout_seconds"],
         ):
             record = prober(target)
             writer.append("health_check", record)

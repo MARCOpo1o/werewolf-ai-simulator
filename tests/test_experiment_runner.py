@@ -399,6 +399,23 @@ class ManifestBuildTests(unittest.TestCase):
         )
         self.assertEqual(validate_manifest_for_execution(manifest), [])
 
+    def test_default_factory_applies_pinned_execution_policies(self):
+        manifest = make_manifest(policies={
+            **OFFLINE_POLICIES,
+            "agent_action_max_attempts": 1,
+            "retryable_errors": ["timeout"],
+            "retry_backoff": "none",
+            "request_timeout_seconds": 37,
+        })
+        entry = manifest["execution_contract"]["schedule"][0]
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = _default_engine_factory(entry, manifest, Path(tmp))
+            self.assertEqual(engine.agent_action_max_attempts, 1)
+            self.assertEqual(engine.retryable_error_categories, ["timeout"])
+            self.assertEqual(engine.retry_backoff, "none")
+            self.assertEqual(engine.request_timeout_seconds, 37)
+            engine.close()
+
     def test_formal_manifest_defaults_to_fail_closed_execution(self):
         manifest = build_experiment_manifest(
             experiment_id="formal",

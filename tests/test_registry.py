@@ -77,6 +77,18 @@ class ResolveTests(unittest.TestCase):
         self.assertFalse(missing.ok)
         self.assertEqual(missing.status.value, "missing_credential")
 
+    def test_build_provider_forwards_pinned_timeout(self):
+        from werewolf.llm.registry import build_provider
+        with mock.patch(
+            "werewolf.llm.litellm_provider.LiteLLMProvider",
+        ) as provider_class:
+            provider_class.return_value = object()
+            result = build_provider(
+                resolve("gemini_flash"), api_key="test-key", timeout=37,
+            )
+        self.assertTrue(result.ok)
+        provider_class.assert_called_once_with(api_key="test-key", timeout=37)
+
     def test_registry_specs_are_frozen(self):
         with self.assertRaises(Exception):
             MODEL_REGISTRY["fast"].model = "other"
