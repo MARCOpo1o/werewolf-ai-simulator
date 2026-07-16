@@ -77,12 +77,16 @@ def adjustment_fingerprint(
 def unique_health_targets(
     conditions: dict, generation: Optional[dict], *,
     request_timeout_seconds: int = 120,
+    active_roles: Optional[set[str]] = None,
 ) -> list:
     """One target per unique model/effective-generation fingerprint."""
     requested = generation_from_dict(generation)
+    active_roles = active_roles or {"werewolf", "villager", "seer"}
     targets = {}
     for condition in conditions.values():
-        for model_name in condition["role_models"].values():
+        for role, model_name in condition["role_models"].items():
+            if role not in active_roles:
+                continue
             spec = resolve(model_name)
             effective = effective_generation_config(requested, spec)
             fingerprint = health_fingerprint(model_name, effective)

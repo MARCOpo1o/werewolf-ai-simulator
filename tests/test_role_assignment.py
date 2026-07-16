@@ -102,6 +102,28 @@ class RoleModelAssignmentTests(unittest.TestCase):
             self.assertTrue(all(agent.provider is None for agent in engine.agents.values()))
             engine.close()
 
+    def test_inactive_seer_provider_is_never_required(self):
+        provider = make_provider()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = GameEngine(
+                n_players=4, n_wolves=1, n_seers=0, seed=1,
+                output_dir=tmpdir,
+                role_models={
+                    "werewolf": "model_a", "villager": "model_b",
+                    "seer": "model_c",
+                },
+                role_providers={
+                    "werewolf": provider, "villager": provider,
+                    "seer": None,
+                },
+                transcript_enabled=False,
+            )
+            self.assertFalse(engine.role_models_resolved["seer"]["active"])
+            self.assertNotIn(
+                "seer", {agent.role for agent in engine.agents.values()},
+            )
+            engine.close()
+
 
 class CrossedExperimentTests(unittest.TestCase):
     def test_condition_matrix(self):

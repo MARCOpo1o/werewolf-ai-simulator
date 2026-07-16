@@ -51,6 +51,20 @@ class HealthTargetTests(unittest.TestCase):
             gemini["effective_generation"]["reasoning_effort"], "low",
         )
 
+    def test_inactive_seer_model_is_not_probed(self):
+        conditions = {
+            "zero_seer": {"role_models": {
+                "werewolf": "fast",
+                "villager": "fast",
+                "seer": "gemini_flash_lite",
+            }},
+        }
+        targets = unique_health_targets(
+            conditions, {"max_output_tokens": 4096},
+            active_roles={"werewolf", "villager"},
+        )
+        self.assertEqual([target["model_alias"] for target in targets], ["fast"])
+
 
 class ProbeTests(unittest.TestCase):
     def _target(self):

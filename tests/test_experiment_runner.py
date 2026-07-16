@@ -377,6 +377,31 @@ class RunnerRetryTests(unittest.TestCase):
 
 
 class RunnerGateTests(unittest.TestCase):
+    def test_zero_seer_run_skips_inactive_model_preflight(self):
+        conditions = {
+            "zero_seer": {"role_models": {
+                "werewolf": "fast", "villager": "fast",
+                "seer": "gemini_flash_lite",
+            }},
+        }
+        seen = []
+
+        def recording_prober(target):
+            seen.append(target["model_alias"])
+            return ready_prober(target)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            write_manifest(tmp, make_manifest(
+                seeds=(9001,), conditions=conditions,
+                game={"belief_snapshots": False, "n_seers": 0},
+            ))
+            counts = run(
+                tmp, health_prober=recording_prober,
+                engine_factory=offline_engine_factory,
+            )
+            self.assertEqual(counts["completed"], 1)
+            self.assertEqual(seen, ["fast"])
+
     def test_execution_runtime_change_blocks_resume(self):
         with tempfile.TemporaryDirectory() as tmp:
             write_manifest(tmp, make_manifest())

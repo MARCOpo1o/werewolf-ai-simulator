@@ -685,9 +685,13 @@ def run_experiment(
             entry["fingerprint"]
             for entry in execution["predeclared_adjustments"]
         }
+        active_roles = {"werewolf", "villager"}
+        if execution["game"]["n_seers"] > 0:
+            active_roles.add("seer")
         for target in unique_health_targets(
             execution["conditions"], execution["generation"],
             request_timeout_seconds=policies["request_timeout_seconds"],
+            active_roles=active_roles,
         ):
             record = prober(target)
             writer.append("health_check", record)

@@ -332,7 +332,13 @@ class GameEngine:
             name = role_models.get(role) or role_models["villager"]
             spec = resolve(name)
             specs[role] = spec
-            if role in role_providers:
+            active = role != "seer" or self.n_seers > 0
+            if not active:
+                # Preserve the declared assignment as inactive metadata, but
+                # never inspect credentials or initialize a provider for a
+                # role that cannot act in this game configuration.
+                providers[role] = None
+            elif role in role_providers:
                 selected = role_providers[role]
                 if selected is None and not self.allow_provider_fallback:
                     raise RuntimeError(
@@ -366,7 +372,7 @@ class GameEngine:
                 "registry_reasoning_default": spec.reasoning_effort,
                 "requested_reasoning_override": self.reasoning_override,
                 "effective_generation": effective.to_json_dict(),
-                "active": role != "seer" or self.n_seers > 0,
+                "active": active,
             }
 
         wolf_roster = [p.id for p in self.players.values()
