@@ -288,6 +288,34 @@ class SummaryRevisionTests(unittest.TestCase):
                 [r["summary_input_sha256"] for r in original["revisions"]],
             )
 
+    def test_noop_after_export_failure_rebuilds_stale_catalog(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_offline_experiment(tmp)
+            first = summarize(tmp)
+            self.assertEqual(first["revision"], 1)
+
+            def fail_export(*args):
+                raise RuntimeError("simulated export failure")
+
+            with mock.patch(
+                "werewolf.experiments.summaries.analysis_runtime_hash",
+                return_value="9" * 64,
+            ):
+                with self.assertRaises(RuntimeError):
+                    summarize(
+                        tmp, analysis_policy="current", exporter=fail_export,
+                    )
+                stale = load_summary_catalog(tmp, "exp1")
+                self.assertEqual(stale["current_revision"], 1)
+
+                recovered = summarize(
+                    tmp, analysis_policy="current",
+                    exporter=lambda *args: None,
+                )
+            self.assertFalse(recovered["created"])
+            self.assertEqual(recovered["revision"], 2)
+            self.assertEqual(recovered["catalog"]["current_revision"], 2)
+
     def test_corrupt_revision_is_a_hard_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             run_offline_experiment(tmp)

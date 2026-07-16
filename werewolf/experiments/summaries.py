@@ -212,7 +212,11 @@ def summarize_experiment(
                             root, experiment_id, revision["revision"],
                         ),
                     )
-                catalog = load_summary_catalog(root, experiment_id)
+                # A previous export failure can leave the catalog behind a
+                # successfully published immutable revision. Re-scan the
+                # revisions after export recovery instead of trusting that
+                # otherwise-valid stale derived file.
+                catalog = rebuild_summary_catalog(root, experiment_id)
                 return {
                     "revision": revision["revision"],
                     "created": False,
