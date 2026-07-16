@@ -14,6 +14,7 @@ from werewolf.experiments.journal import (
     read_journal,
 )
 from werewolf.experiments.manifest import (
+    ManifestError,
     execution_contract_sha256,
     games_dir,
     journal_path,
@@ -440,6 +441,17 @@ class ManifestBuildTests(unittest.TestCase):
         )
         self.assertEqual(validate_manifest_for_execution(manifest), [])
         self.assertEqual(len(manifest["comparisons"]), 3)
+
+    def test_independent_comparison_is_rejected_in_v1(self):
+        comparison = {**default_crossed_comparisons()[0],
+                      "design": "independent"}
+        with self.assertRaises(ManifestError):
+            build_experiment_manifest(
+                experiment_id="independent",
+                conditions=CONDITIONS,
+                seeds=[1], repetitions=1,
+                comparisons=[comparison],
+            )
 
     def test_unknown_policy_rejected(self):
         from werewolf.experiments.manifest import ManifestError

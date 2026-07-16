@@ -493,6 +493,28 @@ class AnalyzeV1Tests(unittest.TestCase):
             {"missing_condition_observation": 1},
         )
 
+    def test_partial_repetition_set_excludes_entire_seed(self):
+        manifest = build_experiment_manifest(
+            experiment_id="agg_repetitions",
+            conditions=TWO_CONDITIONS,
+            seeds=[1, 2, 3, 4, 5],
+            repetitions=2,
+            game={"n_players": 4, "n_wolves": 1, "n_seers": 0},
+            comparisons=[COMPARISON],
+        )
+        sources = []
+        for seed in (1, 2, 3, 4, 5):
+            sources.append(make_source("cond_a", seed, repetition=0))
+            sources.append(make_source("cond_a", seed, repetition=1))
+            sources.append(make_source("cond_b", seed, repetition=0))
+            if seed != 5:
+                sources.append(make_source("cond_b", seed, repetition=1))
+        comparison = run_analysis(sources, manifest)["comparisons"][0]
+        self.assertEqual(comparison["n_seeds"], 4)
+        self.assertEqual(
+            comparison["excluded_pairs"], {"incomplete_repetitions": 1},
+        )
+
     def test_zero_shared_seeds_yields_null(self):
         sources = [make_source("cond_a", 1), make_source("cond_b", 2)]
         analysis = run_analysis(sources)

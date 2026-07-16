@@ -719,7 +719,7 @@ def _game_metric_value(game: dict, metric_id: str) -> Optional[float]:
 
 
 def _run_comparison(
-    comparison: dict, views: dict, bootstrap: dict,
+    comparison: dict, views: dict, bootstrap: dict, *, repetitions: int,
 ) -> dict:
     result = {**comparison, "estimate": None, "ci_low": None,
               "ci_high": None, "interval_status": None,
@@ -746,26 +746,47 @@ def _run_comparison(
         result["status"] = "unsupported_design"
         return result
 
-    # Pair by seed; require eligible observations on both sides and
-    # matching game-rule and role-map hashes. Incomplete pairs are
-    # excluded and counted — NEVER downgraded to independent.
+    # Pair by (seed, repetition): each included seed must have the full
+    # expected repetition set in both conditions, with matching game-rule
+    # and role-map hashes for every pair. Incomplete pairing is never
+    # silently downgraded to an independent comparison.
     excluded: dict = defaultdict(int)
     paired: dict = {}
+    expected_repetitions = set(range(repetitions))
     for seed in sorted(set(a_games) | set(b_games)):
         a, b = a_games.get(seed), b_games.get(seed)
         if not a or not b:
             excluded["missing_condition_observation"] += 1
             continue
-        hashes = {
-            (g["game_rules_hash"], g["role_map_hash"]) for g in a + b
-        }
-        if len(hashes) != 1:
+        a_by_repetition = {game["repetition"]: game for game in a}
+        b_by_repetition = {game["repetition"]: game for game in b}
+        if (set(a_by_repetition) != expected_repetitions
+                or set(b_by_repetition) != expected_repetitions
+                or len(a_by_repetition) != len(a)
+                or len(b_by_repetition) != len(b)):
+            excluded["incomplete_repetitions"] += 1
+            continue
+        if any(
+            (a_by_repetition[repetition]["game_rules_hash"],
+             a_by_repetition[repetition]["role_map_hash"])
+            != (b_by_repetition[repetition]["game_rules_hash"],
+                b_by_repetition[repetition]["role_map_hash"])
+            for repetition in expected_repetitions
+        ):
             excluded["mismatched_rules_or_role_map"] += 1
             continue
-        a_values = [_game_metric_value(g, comparison["metric_id"])
-                    for g in a]
-        b_values = [_game_metric_value(g, comparison["metric_id"])
-                    for g in b]
+        a_values = [
+            _game_metric_value(
+                a_by_repetition[repetition], comparison["metric_id"],
+            )
+            for repetition in sorted(expected_repetitions)
+        ]
+        b_values = [
+            _game_metric_value(
+                b_by_repetition[repetition], comparison["metric_id"],
+            )
+            for repetition in sorted(expected_repetitions)
+        ]
         paired[seed] = (a_values, b_values)
 
     result["excluded_pairs"] = dict(excluded)
@@ -857,7 +878,10 @@ def analyze_v1(
     }
 
     comparisons = [
-        _run_comparison(comparison, views, bootstrap)
+        _run_comparison(
+            comparison, views, bootstrap,
+            repetitions=manifest["execution_contract"]["repetitions"],
+        )
         for comparison in manifest.get("comparisons", [])
     ]
 

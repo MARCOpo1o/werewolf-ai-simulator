@@ -152,9 +152,10 @@ def validate_comparisons(comparisons, condition_ids) -> list:
                     f"comparison {cid!r} references unknown condition "
                     f"{comparison[side]!r}"
                 )
-        if comparison["design"] not in ("paired", "independent"):
+        if comparison["design"] != "paired":
             errors.append(
-                f"comparison {cid!r} design must be paired or independent"
+                f"comparison {cid!r} design must be 'paired' in v1; "
+                "independent clustered comparisons are not implemented"
             )
         if comparison["effect"] != "difference":
             errors.append(
