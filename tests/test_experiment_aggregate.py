@@ -423,6 +423,8 @@ class AnalyzeV1Tests(unittest.TestCase):
         self.assertEqual(belief["seeds"], 6)
         retention = overall["correct_belief_retention"]
         self.assertEqual(retention["estimate"], 1.0)
+        self.assertEqual(overall["initial_correctness"]["estimate"], 0.5)
+        self.assertEqual(overall["beneficial_revision"]["estimate"], 1.0)
         alignment = overall["vote_belief_alignment"]
         self.assertEqual(alignment["estimate"], 0.5)
         self.assertEqual(alignment["eligible_votes"], 24)
@@ -439,6 +441,7 @@ class AnalyzeV1Tests(unittest.TestCase):
         self.assertEqual(ece["prediction_count"], 72)
         self.assertEqual(len(ece["bins"]), 10)
         self.assertIsNotNone(ece["estimate"])
+        self.assertEqual(ece["interval_status"], "ok")
 
     def test_cost_tokens_latency(self):
         analysis = run_analysis(self._sources())
@@ -452,6 +455,8 @@ class AnalyzeV1Tests(unittest.TestCase):
         self.assertEqual(latency["calls_with_latency"], 48)
         self.assertEqual(latency["total_attempted_calls"], 48)
         self.assertEqual(latency["coverage_fraction"], 1.0)
+        self.assertEqual(latency["median_ms"], 100)
+        self.assertEqual(latency["p90_ms"], 100)
 
     def test_modified_sources_are_ineligible_but_visible(self):
         sources = self._sources()

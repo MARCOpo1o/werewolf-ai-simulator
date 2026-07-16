@@ -31,9 +31,11 @@ PROVENANCE_FIELDS = [
 # Metrics exported in long form from each view/condition scope.
 _SCALAR_METRICS = (
     "village_win_rate", "wolf_win_rate", "clean_game_rate",
+    "clean_eligible_completion_rate",
     "fallback_game_rate", "fallback_decision_group_rate", "retry_rate",
-    "repair_rate", "probability_movement_toward_wolves",
-    "harmful_revision", "correct_belief_retention",
+    "repair_rate", "parse_failure_rate", "invalid_action_rate",
+    "probability_movement_toward_wolves", "initial_correctness",
+    "harmful_revision", "beneficial_revision", "correct_belief_retention",
     "vote_belief_alignment", "wolf_suspicion_awareness_error",
     "brier_pre_discussion", "brier_post_discussion",
 )

@@ -165,6 +165,13 @@ def _decision_groups(rows: list) -> list:
                 and r.get("parse_method") in ("repaired", "regex")
                 for r in records
             ),
+            "has_parse_failure": any(
+                r.get("error_category") == "malformed_json" for r in records
+            ),
+            "has_invalid_action": any(
+                r.get("error_category") == "invalid_game_action"
+                for r in records
+            ),
         })
     return out
 
@@ -533,6 +540,10 @@ def _view_metrics(games: list, bootstrap: dict, label: str) -> dict:
 
     # Game-level reliability rates (game-weighted).
     clean_games = sum(1 for g in games if g["clean"])
+    clean_eligible_games = sum(
+        1 for g in games
+        if g["clean"] and g["analysis_eligibility"] == "eligible"
+    )
     fallback_games = sum(
         1 for g in games
         if any(group["ended_in_fallback"]
@@ -542,6 +553,13 @@ def _view_metrics(games: list, bootstrap: dict, label: str) -> dict:
         "numerator": clean_games, "denominator": total,
         **(boot(by_seed(lambda g: 1.0 if g["clean"] else 0.0),
                 mean_statistic, "clean_game_rate") or {}),
+    }
+    metrics["clean_eligible_completion_rate"] = {
+        "numerator": clean_eligible_games, "denominator": total,
+        **(boot(by_seed(
+            lambda g: 1.0 if g["clean"]
+            and g["analysis_eligibility"] == "eligible" else 0.0,
+        ), mean_statistic, "clean_eligible_completion_rate") or {}),
     }
     metrics["fallback_game_rate"] = {
         "numerator": fallback_games, "denominator": total,
@@ -581,6 +599,14 @@ def _view_metrics(games: list, bootstrap: dict, label: str) -> dict:
         "repair_rate",
         lambda grp: grp["repaired"], lambda grp: grp["completed"],
     )
+    metrics["parse_failure_rate"] = group_rate(
+        "parse_failure_rate",
+        lambda grp: grp["has_parse_failure"], lambda grp: grp["attempted"],
+    )
+    metrics["invalid_action_rate"] = group_rate(
+        "invalid_action_rate",
+        lambda grp: grp["has_invalid_action"], lambda grp: grp["attempted"],
+    )
 
     # Belief metrics: pooled observations with full counts.
     emitted = sum(g["belief"]["snapshot_coverage"]["emitted"] for g in games)
@@ -611,6 +637,22 @@ def _view_metrics(games: list, bootstrap: dict, label: str) -> dict:
         lambda g: binary_obs(
             g["belief"]["harmful"],
             g["belief"]["initially_correct"] - g["belief"]["harmful"],
+        ),
+        ratio_statistic,
+    )
+    metrics["initial_correctness"] = pooled_obs(
+        "initial_correctness",
+        lambda g: binary_obs(
+            g["belief"]["initially_correct"],
+            g["belief"]["initially_wrong"],
+        ),
+        ratio_statistic,
+    )
+    metrics["beneficial_revision"] = pooled_obs(
+        "beneficial_revision",
+        lambda g: binary_obs(
+            g["belief"]["beneficial"],
+            g["belief"]["initially_wrong"] - g["belief"]["beneficial"],
         ),
         ratio_statistic,
     )
@@ -658,12 +700,22 @@ def _view_metrics(games: list, bootstrap: dict, label: str) -> dict:
             if snap_cp == checkpoint
         ]
         bins, ece = _ece_bins(flat)
+        predictions_by_seed = defaultdict(list)
+        for item in flat:
+            predictions_by_seed[item[3]].append(item)
+        interval = boot(
+            predictions_by_seed,
+            lambda values: _ece_bins(values)[1],
+            f"ece_{checkpoint}",
+        )
         metrics[f"ece_{checkpoint}"] = {
             "estimate": ece,
             "prediction_count": len(flat),
             "game_count": len({f[2] for f in flat}),
             "seed_count": len({f[3] for f in flat}),
             "bins": bins,
+            **({key: value for key, value in (interval or {}).items()
+                if key != "estimate"}),
         }
 
     # Cost, tokens, latency.
@@ -695,8 +747,21 @@ def _view_metrics(games: list, bootstrap: dict, label: str) -> dict:
 
     latencies = [v for g in games for v in g["usage"]["latencies"]]
     attempted = sum(g["usage"]["api_calls"] for g in games)
+    sorted_latencies = sorted(latencies)
+
+    def percentile(percentile: float):
+        if not sorted_latencies:
+            return None
+        index = min(
+            len(sorted_latencies) - 1,
+            int(percentile * (len(sorted_latencies) - 1)),
+        )
+        return sorted_latencies[index]
+
     metrics["latency"] = {
         "mean_ms": mean_statistic(latencies),
+        "median_ms": percentile(0.5),
+        "p90_ms": percentile(0.9),
         "calls_with_latency": len(latencies),
         "total_attempted_calls": attempted,
         "coverage_fraction": (
