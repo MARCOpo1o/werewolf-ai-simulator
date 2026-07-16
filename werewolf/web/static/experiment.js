@@ -96,7 +96,7 @@ function renderConditions() {
     for (const [condition, metrics] of Object.entries(conditions)) {
         const row = document.createElement('tr');
         cell(row, condition); cell(row, value(metrics.games, 0)); cell(row, value(metrics.seed_count, 0));
-        cell(row, percent(scheduled[condition]?.scheduled_completion_rate)); cell(row, percent(scheduled[condition]?.final_failed_trial_rate));
+        cell(row, metricEstimate(scheduled[condition]?.scheduled_completion_rate)); cell(row, metricEstimate(scheduled[condition]?.final_failed_trial_rate));
         cell(row, metricEstimate(metrics.village_win_rate)); cell(row, metricEstimate(metrics.wolf_win_rate));
         cell(row, metricEstimate(metrics.clean_game_rate)); cell(row, metricEstimate(metrics.fallback_game_rate)); cell(row, money(metrics.cost?.cost_per_game_usd)); rows.append(row);
     }
@@ -130,9 +130,9 @@ function renderOperational() {
     const target = clear('operational-metrics');
     const scheduled = state.summary.analysis?.scheduled_trial_outcomes?.overall || {};
     target.append(
-        card('Scheduled completion', percent(scheduled.scheduled_completion_rate), `${scheduled.completed || 0} / ${scheduled.scheduled || 0} trials`),
-        card('Final failed trials', percent(scheduled.final_failed_trial_rate), `${scheduled.failed || 0} scheduled trials`),
-        card('Interrupted or pending', percent(scheduled.final_interrupted_or_pending_rate), `${(scheduled.interrupted || 0) + (scheduled.pending || 0) + (scheduled.running || 0)} scheduled trials`),
+        card('Scheduled completion', metricEstimate(scheduled.scheduled_completion_rate), `${scheduled.completed || 0} / ${scheduled.scheduled || 0} trials`),
+        card('Final failed trials', metricEstimate(scheduled.final_failed_trial_rate), `${scheduled.failed || 0} scheduled trials`),
+        card('Interrupted or pending', metricEstimate(scheduled.final_interrupted_or_pending_rate), `${(scheduled.interrupted || 0) + (scheduled.pending || 0) + (scheduled.running || 0)} scheduled trials`),
         card('Operational attempts', value(attempts.total, 0), `${attempts.trial_failed || 0} failed · ${attempts.trial_interrupted || 0} interrupted`),
         card('Health checks', value(operational.cost?.health_checks, 0), `${money(operational.cost?.health_checks_usd)} · ${operational.cost?.health_cost_complete ? 'complete' : 'partial/unavailable'}`),
         card('Sources excluded', value(operational.cost?.sources_excluded_from_totals, 0), operational.cost?.complete ? 'Cost evidence complete' : 'Cost evidence partial'),

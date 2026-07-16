@@ -1034,8 +1034,9 @@ def analyze_v1(
 
     schedule = manifest["execution_contract"]["schedule"]
 
-    def scheduled_outcomes(entries: list) -> dict:
+    def scheduled_outcomes(entries: list, label: str) -> dict:
         counts = defaultdict(int)
+        observations = []
         trial_by_key = {}
         for trial in replay_state.trials.values():
             if not trial.attempts:
@@ -1064,10 +1065,39 @@ def analyze_v1(
                 counts["interrupted"] += 1
             else:
                 counts["pending"] += 1
+            observations.append((entry, (
+                "completed" if trial is not None and trial.completed
+                else "running" if trial is not None
+                and trial.open_attempt is not None
+                else "failed" if trial is not None
+                and trial.last_terminal_type == "trial_failed"
+                else "interrupted" if trial is not None
+                and trial.last_terminal_type == "trial_interrupted"
+                else "pending"
+            )))
         total_scheduled = len(entries)
-        incomplete = sum(counts[name] for name in (
-            "interrupted", "pending", "running",
-        ))
+
+        def rate(metric_id: str, included_states: set[str]) -> dict:
+            by_seed = defaultdict(list)
+            numerator = 0
+            for entry, state in observations:
+                value = 1.0 if state in included_states else 0.0
+                by_seed[entry["seed"]].append(value)
+                numerator += int(value)
+            interval = cluster_bootstrap(
+                by_seed, mean_statistic,
+                n_boot=bootstrap["n_boot"], alpha=bootstrap["alpha"],
+                rng_seed=derive_rng_seed(
+                    bootstrap["rng_seed"], "scheduled", label, metric_id,
+                ),
+            )
+            return {
+                "numerator": numerator,
+                "denominator": total_scheduled,
+                "seed_count": len(by_seed),
+                **(interval or {"estimate": None}),
+            }
+
         return {
             "scheduled": total_scheduled,
             "completed": counts["completed"],
@@ -1075,26 +1105,25 @@ def analyze_v1(
             "interrupted": counts["interrupted"],
             "pending": counts["pending"],
             "running": counts["running"],
-            "scheduled_completion_rate": (
-                counts["completed"] / total_scheduled
-                if total_scheduled else None
+            "scheduled_completion_rate": rate(
+                "scheduled_completion_rate", {"completed"},
             ),
-            "final_failed_trial_rate": (
-                counts["failed"] / total_scheduled
-                if total_scheduled else None
+            "final_failed_trial_rate": rate(
+                "final_failed_trial_rate", {"failed"},
             ),
-            "final_interrupted_or_pending_rate": (
-                incomplete / total_scheduled if total_scheduled else None
+            "final_interrupted_or_pending_rate": rate(
+                "final_interrupted_or_pending_rate",
+                {"interrupted", "pending", "running"},
             ),
         }
 
     scheduled = {
-        "overall": scheduled_outcomes(schedule),
+        "overall": scheduled_outcomes(schedule, "overall"),
         "per_condition": {
             condition_id: scheduled_outcomes([
                 entry for entry in schedule
                 if entry["condition_id"] == condition_id
-            ])
+            ], condition_id)
             for condition_id in sorted(
                 manifest["execution_contract"]["conditions"]
             )

@@ -608,7 +608,16 @@ class AnalyzeV1Tests(unittest.TestCase):
         scheduled = analysis["scheduled_trial_outcomes"]
         self.assertEqual(scheduled["overall"]["completed"], 12)
         self.assertEqual(
-            scheduled["overall"]["scheduled_completion_rate"], 1.0,
+            scheduled["overall"]["scheduled_completion_rate"]["estimate"],
+            1.0,
+        )
+        self.assertEqual(
+            scheduled["overall"]["scheduled_completion_rate"]["n_seeds"],
+            6,
+        )
+        self.assertEqual(
+            scheduled["overall"]["scheduled_completion_rate"]
+            ["interval_status"], "ok",
         )
         self.assertEqual(
             scheduled["per_condition"]["cond_a"]["completed"], 6,
@@ -625,10 +634,12 @@ class AnalyzeV1Tests(unittest.TestCase):
         self.assertEqual(scheduled["overall"]["completed"], 11)
         self.assertEqual(scheduled["overall"]["failed"], 1)
         self.assertAlmostEqual(
-            scheduled["overall"]["scheduled_completion_rate"], 11 / 12,
+            scheduled["overall"]["scheduled_completion_rate"]["estimate"],
+            11 / 12,
         )
         self.assertAlmostEqual(
-            scheduled["overall"]["final_failed_trial_rate"], 1 / 12,
+            scheduled["overall"]["final_failed_trial_rate"]["estimate"],
+            1 / 12,
         )
 
     def test_failed_work_cost_is_included(self):
