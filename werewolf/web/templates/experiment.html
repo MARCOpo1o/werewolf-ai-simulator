@@ -13,7 +13,45 @@
     </header>
     <main class="experiment-shell">
         {% if experiment_id %}
-        <div id="experiment-report" aria-live="polite">Loading experiment…</div>
+        <div id="experiment-report" aria-live="polite">
+            <div class="report-title-row">
+                <div><p class="eyebrow">Multi-game benchmark</p><h1 id="experiment-title">Loading experiment…</h1><p id="experiment-description" class="lede"></p></div>
+                <label class="control-label">Summary revision<select id="summary-revision" aria-label="Summary revision"></select></label>
+            </div>
+            <div id="experiment-status" class="status-row"></div>
+            <div id="experiment-error" class="error-state hidden"></div>
+            <section id="benchmark-overview" class="metric-grid" aria-label="Experiment overview"></section>
+            <section id="benchmark-integrity" class="notice hidden"></section>
+            <section class="benchmark-section">
+                <div class="section-title"><div><p class="eyebrow">Comparison lens</p><h2>Analysis view</h2></div><label class="control-label">View<select id="analysis-view" aria-label="Analysis view"></select></label></div>
+                <p id="view-note" class="muted"></p>
+                <div id="selected-metrics" class="metric-grid"></div>
+            </section>
+            <section class="benchmark-section">
+                <div class="section-title"><div><p class="eyebrow">Conditions</p><h2>Matchup and reliability</h2></div></div>
+                <div class="table-wrap"><table><thead><tr><th>Condition</th><th>Games</th><th>Seeds</th><th>Village win</th><th>Wolf win</th><th>Clean games</th><th>Fallback games</th><th>Cost/game</th></tr></thead><tbody id="condition-rows"></tbody></table></div>
+                <p id="condition-empty" class="empty-state hidden">No eligible games in this view.</p>
+            </section>
+            <section class="benchmark-section">
+                <div class="section-title"><div><p class="eyebrow">Predeclared contrasts</p><h2>Paired comparisons</h2></div></div>
+                <div class="table-wrap"><table><thead><tr><th>Comparison</th><th>View</th><th>Metric</th><th>Conditions</th><th>Estimate</th><th>95% interval</th><th>Seed clusters</th><th>Status</th></tr></thead><tbody id="comparison-rows"></tbody></table></div>
+            </section>
+            <section class="benchmark-section">
+                <div class="section-title"><div><p class="eyebrow">Calibration evidence</p><h2>Post-discussion ECE bins</h2></div></div>
+                <div class="table-wrap"><table><thead><tr><th>Probability bin</th><th>Predictions</th><th>Games</th><th>Seeds</th><th>Mean confidence</th><th>Wolf frequency</th><th>Absolute gap</th></tr></thead><tbody id="calibration-rows"></tbody></table></div>
+                <p id="calibration-empty" class="empty-state hidden">No valid post-discussion probability evidence in this view.</p>
+            </section>
+            <section class="benchmark-section">
+                <div class="section-title"><div><p class="eyebrow">Execution evidence</p><h2>Operational attempts and source integrity</h2></div></div>
+                <div id="operational-metrics" class="metric-grid"></div>
+                <div class="table-wrap"><table><thead><tr><th>Trial</th><th>Attempt</th><th>Seed</th><th>Condition</th><th>Winner</th><th>Clean</th><th>Source</th><th>Forensic report</th></tr></thead><tbody id="trial-rows"></tbody></table></div>
+            </section>
+            <section class="benchmark-section">
+                <div class="section-title"><div><p class="eyebrow">Reproducibility</p><h2>Manifest and exports</h2></div></div>
+                <dl id="reproducibility-values" class="key-values wide"></dl>
+                <div id="export-links" class="export-links"></div>
+            </section>
+        </div>
         {% else %}
         <h1>Experiment not found</h1>
         <p><a href="/experiments">Return to experiment history</a></p>

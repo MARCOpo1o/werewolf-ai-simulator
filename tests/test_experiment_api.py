@@ -118,6 +118,19 @@ class ExperimentApiTests(unittest.TestCase):
         self.assertEqual(report.status_code, 200)
         self.assertIn("/static/experiment.js", report.get_data(as_text=True))
         self.assertNotIn("run", report.get_data(as_text=True).lower())
+        for section in (
+            "benchmark-overview", "condition-rows", "comparison-rows",
+            "calibration-rows", "trial-rows", "export-links",
+        ):
+            self.assertIn(f'id="{section}"', report.get_data(as_text=True))
+
+        dashboard = (
+            Path(__file__).parents[1] / "werewolf" / "web" / "static"
+            / "experiment.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("analysis-view", dashboard)
+        self.assertIn("/experiments/${encodeURIComponent(experimentId)}/games/", dashboard)
+        self.assertNotIn("method: 'POST'", dashboard)
 
 
 if __name__ == "__main__":

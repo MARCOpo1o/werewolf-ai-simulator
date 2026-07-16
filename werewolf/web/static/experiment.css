@@ -43,3 +43,29 @@ h1 { margin: 4px 0 8px; font-size: clamp(2rem, 4vw, 3rem); }
 .experiment-card h2 { margin: 0; font-size: 1.15rem; }
 .experiment-card p { margin: 6px 0 0; color: var(--muted); }
 .experiment-json { overflow: auto; padding: 16px; border-radius: 10px; background: #020617; color: #cbd5e1; }
+.hidden { display: none !important; }
+.report-title-row, .section-title { display: flex; gap: 24px; justify-content: space-between; align-items: end; flex-wrap: wrap; }
+.report-title-row { margin-bottom: 18px; }
+.control-label { display: grid; gap: 6px; color: var(--muted); font-size: .85rem; }
+select { color: var(--text); background: var(--panel-soft); border: 1px solid #475569; border-radius: 6px; padding: 8px; }
+.status-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 22px; }
+.status-badge { padding: 4px 9px; border-radius: 999px; background: #334155; color: var(--text); font-size: .8rem; }
+.status-badge.ok { background: #14532d; }
+.status-badge.warn { background: #713f12; }
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 18px 0; }
+.metric-card { padding: 14px; border: 1px solid #334155; border-radius: 10px; background: var(--panel-soft); }
+.metric-card span, .metric-card small { display: block; color: var(--muted); font-size: .8rem; }
+.metric-card strong { display: block; margin-top: 4px; font-size: 1.2rem; }
+.benchmark-section { margin-top: 42px; }
+.benchmark-section h2 { margin: 3px 0 8px; font-size: 1.35rem; }
+.notice { margin: 18px 0; padding: 14px; border-left: 4px solid #fbbf24; color: #fef3c7; background: #451a03; }
+.muted { color: var(--muted); }
+.table-wrap { overflow-x: auto; border: 1px solid #334155; border-radius: 10px; }
+table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #334155; vertical-align: top; }
+th { color: #bae6fd; background: #172554; font-weight: 600; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td code { color: #bae6fd; }
+.export-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.export-links a { padding: 8px 11px; border: 1px solid #475569; border-radius: 6px; text-decoration: none; }
+@media (max-width: 600px) { .experiment-header, .experiment-shell { padding-left: 16px; padding-right: 16px; } .experiment-header { align-items: flex-start; flex-direction: column; padding-top: 14px; padding-bottom: 14px; } }

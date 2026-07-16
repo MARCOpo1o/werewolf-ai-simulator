@@ -20,7 +20,10 @@ async function loadExperiments() {
             const progress = experiment.progress || {};
             const text = document.createElement('p');
             text.textContent = `${progress.completed || 0} / ${experiment.scheduled_trials || 0} completed · ${experiment.summary_revisions || 0} summary revisions`;
-            card.append(title, text);
+            const metadata = document.createElement('p');
+            metadata.className = 'muted';
+            metadata.textContent = `${experiment.seed_count || 0} seeds · ${experiment.repetitions || 0} repetitions · ${experiment.status || 'unknown'}`;
+            card.append(title, text, metadata);
             return card;
         }));
     } catch (error) {
