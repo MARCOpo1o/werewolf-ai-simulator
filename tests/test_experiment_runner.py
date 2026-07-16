@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from werewolf.experiments.health import probe_model
+from werewolf.experiments.health import probe_model, unique_health_targets
 from werewolf.engine.game import GameEngine
 from werewolf.experiments.journal import (
     JournalWriter,
@@ -425,14 +425,15 @@ class RunnerGateTests(unittest.TestCase):
                     allow_adjusted_health=True)
 
     def test_predeclared_adjustment_with_flag_runs(self):
-        target_probe = adjusted_prober({
-            "health_fingerprint": "x",
-            "model_name": "fast",
-            "model_alias": "fast",
-            "requested_model": "grok-4.3",
-            "provider": "xai",
-            "effective_generation": {"max_output_tokens": 4096},
-        })
+        base_manifest = make_manifest()
+        execution = base_manifest["execution_contract"]
+        target = unique_health_targets(
+            execution["conditions"], execution["generation"],
+            request_timeout_seconds=(
+                execution["policies"]["request_timeout_seconds"]
+            ),
+        )[0]
+        target_probe = adjusted_prober(target)
         fingerprint = target_probe["adjustment_fingerprint"]
         with tempfile.TemporaryDirectory() as tmp:
             write_manifest(tmp, make_manifest(

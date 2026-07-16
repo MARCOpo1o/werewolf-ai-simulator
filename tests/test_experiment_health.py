@@ -76,9 +76,11 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(
             record["adjustment_fingerprint"],
             adjustment_fingerprint(
+                health_fingerprint=record["health_fingerprint"],
                 generation_dropped=["provider_seed"],
                 generation_adjusted=[],
                 model_identity="matched",
+                resolved_model="grok-4.3",
             ),
         )
 
@@ -144,12 +146,44 @@ class HealthPolicyTests(unittest.TestCase):
     def test_changed_adjustment_blocks(self):
         record = self._adjusted_record()
         other = adjustment_fingerprint(
+            health_fingerprint=record["health_fingerprint"],
             generation_dropped=["temperature"],
             generation_adjusted=[],
             model_identity="matched",
+            resolved_model="grok-4.3",
         )
         self.assertIsNotNone(evaluate_health_record(
             record, predeclared_fingerprints=[other], allow_adjusted=True,
+        ))
+
+    def test_same_adjustment_for_another_health_target_is_not_authorized(self):
+        record = self._adjusted_record()
+        other_target = adjustment_fingerprint(
+            health_fingerprint="f" * 64,
+            generation_dropped=["provider_seed"],
+            generation_adjusted=[],
+            model_identity="matched",
+            resolved_model="grok-4.3",
+        )
+        self.assertIsNotNone(evaluate_health_record(
+            record,
+            predeclared_fingerprints=[other_target],
+            allow_adjusted=True,
+        ))
+
+    def test_resolved_model_is_part_of_adjustment_authorization(self):
+        record = self._adjusted_record()
+        other_resolution = adjustment_fingerprint(
+            health_fingerprint=record["health_fingerprint"],
+            generation_dropped=["provider_seed"],
+            generation_adjusted=[],
+            model_identity="matched",
+            resolved_model="grok-4.3-redirect",
+        )
+        self.assertIsNotNone(evaluate_health_record(
+            record,
+            predeclared_fingerprints=[other_resolution],
+            allow_adjusted=True,
         ))
 
     def test_failed_blocks(self):

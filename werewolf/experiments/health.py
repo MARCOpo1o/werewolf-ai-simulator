@@ -60,14 +60,17 @@ def health_fingerprint(model_name: str, effective: GenerationConfig) -> str:
 
 
 def adjustment_fingerprint(
-    *, generation_dropped, generation_adjusted, model_identity: str
+    *, health_fingerprint: str, generation_dropped, generation_adjusted,
+    model_identity: str, resolved_model: Optional[str],
 ) -> str:
     """Identity of a detected provider adjustment. Predeclared
     adjustments in the manifest carry exactly these fingerprints."""
     return jcs_sha256({
+        "health_fingerprint": health_fingerprint,
         "generation_dropped": sorted(str(x) for x in generation_dropped),
         "generation_adjusted": sorted(str(x) for x in generation_adjusted),
         "model_identity": model_identity,
+        "resolved_model": resolved_model,
     })
 
 
@@ -191,9 +194,11 @@ def probe_model(target: dict, *, provider=None) -> dict:
     }
     if status == "adjusted":
         record["adjustment_fingerprint"] = adjustment_fingerprint(
+            health_fingerprint=target["health_fingerprint"],
             generation_dropped=dropped,
             generation_adjusted=adjusted,
             model_identity=model_identity,
+            resolved_model=result.resolved_model,
         )
     return record
 
