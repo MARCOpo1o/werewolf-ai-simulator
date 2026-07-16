@@ -1,8 +1,24 @@
-# Multi-game benchmark experiments
+# Multi-game model-assignment benchmark experiments
 
-PR 3 compares controlled collections of games. It does not assign a universal
-model score, launch paid work from the browser, or turn observed dialogue
-associations into causal persuasion claims.
+PR 3A compares controlled collections of games whose conditions vary model
+assignments by role. It does not assign a universal model score, launch paid
+work from the browser, or turn observed dialogue associations into causal
+persuasion claims.
+
+## Implemented scope
+
+An explicit condition currently contains a complete Werewolf, Villager, and
+Seer model assignment plus an optional description. Game rules, prompt profile,
+and generation settings are shared by every condition in one experiment. The
+only supported prompt profile is `baseline_v1`, which preserves the existing
+game prompts. Per-condition prompt, reasoning, and generation overrides are a
+later extension and are not accepted by the manifest validator.
+
+Experiment game logs are canonical under
+`outputs/experiments/<experiment_id>/games/`. The experiment report links these
+logs to the single-game forensic report API, but they are not added to the
+global `outputs/games/index.json` history in PR 3A. Unifying those stores is
+deferred rather than silently copying canonical evidence.
 
 ## Create, validate, run, and summarize
 
@@ -102,3 +118,8 @@ retention, alignment, suspicion awareness, reliability, latency, and cost, but
 does not claim that a particular message caused an observed belief change.
 
 Controlled forked interventions remain a future causal benchmark layer.
+
+PR 3A is therefore a model-assignment benchmark layer, not yet the complete
+arbitrary-condition benchmark. Per-condition prompts and generation policies,
+global game-history integration, and causal intervention analysis remain
+explicitly outside this implementation.

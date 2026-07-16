@@ -83,12 +83,12 @@ The related APIs are:
 
 JSONL remains canonical. Rebuildable metadata, report sidecars, and `outputs/games/index.json` only accelerate history and report reads. Reconciliation runs once on first history access, incrementally after a game completes or a report is requested, and explicitly through `GameRepository.rebuild()` for tests and maintenance. Normal history requests read the derived index instead of rescanning every log. See [the single-game report contract](docs/single-game-report.md) for status, privacy, storage, and compatibility details.
 
-## Running formal benchmark experiments (CLI)
+## Running formal model-assignment benchmark experiments (CLI)
 
-The PR 3 experiment runner is the reproducible, CLI-only path for multi-game
-model comparisons. It materializes a versioned manifest, runs conditions
-sequentially with deterministic seed-block ordering, journals every attempt,
-and writes immutable aggregate summary revisions:
+The PR 3A experiment runner is the reproducible, CLI-only path for multi-game
+model-assignment comparisons. It materializes a versioned manifest, runs
+conditions sequentially with deterministic seed-block ordering, journals every
+attempt, and writes immutable aggregate summary revisions:
 
 ```bash
 python3 -m werewolf.cli.experiment create-crossed \

@@ -1,9 +1,10 @@
 """Experiment conditions: explicit role-model assignments per condition.
 
-Arbitrary explicit conditions are the primitive; the crossed A/B helper
-is sugar producing the standard producer-target matrix. Every condition
-fully materializes its role -> model assignment, so the manifest never
-depends on runtime defaults.
+Explicit model-assignment conditions are the primitive; the crossed A/B helper
+is sugar producing the standard producer-target matrix. Every condition fully
+materializes its role -> model assignment, so the manifest never depends on
+runtime defaults. Per-condition prompt and generation overrides are outside
+the PR 3A contract.
 """
 from __future__ import annotations
 
