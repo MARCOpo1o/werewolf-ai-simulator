@@ -90,6 +90,24 @@ class ExperimentApiTests(unittest.TestCase):
             404,
         )
 
+    def test_experiment_games_link_to_their_scoped_forensic_report(self):
+        summary = self.client.get(
+            "/api/experiments/exp1/summaries/1"
+        ).get_json()
+        game_id = summary["analysis"]["games"][0]["game_id"]
+        report = self.client.get(
+            f"/api/experiments/exp1/games/{game_id}/report"
+        )
+        self.assertEqual(report.status_code, 200)
+        self.assertEqual(report.get_json()["overview"]["game_id"], game_id)
+
+        page = self.client.get(f"/experiments/exp1/games/{game_id}")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(
+            'data-report-api-base="/api/experiments/exp1/games"',
+            page.get_data(as_text=True),
+        )
+
     def test_pages_are_read_only_experiment_views(self):
         history = self.client.get("/experiments")
         self.assertEqual(history.status_code, 200)

@@ -21,6 +21,7 @@ from werewolf.web.services import (
 )
 from werewolf.web.experiment_service import (
     ExperimentNotFound,
+    experiment_game_repository,
     export_path,
     list_experiments,
     load_experiment,
@@ -81,6 +82,22 @@ def experiment_report_page(experiment_id: str):
     except ExperimentNotFound:
         return render_template("experiment.html", experiment_id=None), 404
     return render_template("experiment.html", experiment_id=experiment_id)
+
+
+@app.route("/experiments/<experiment_id>/games/<game_id>")
+def experiment_game_report_page(experiment_id: str, game_id: str):
+    try:
+        repository = experiment_game_repository(experiment_root, experiment_id)
+        path = repository.log_path(game_id)
+    except (ExperimentNotFound, InvalidGameId):
+        return render_template("report.html", game_id=None), 404
+    if not path.exists():
+        return render_template("report.html", game_id=None), 404
+    return render_template(
+        "report.html", game_id=game_id,
+        report_api_base=f"/api/experiments/{experiment_id}/games",
+        history_link=f"/experiments/{experiment_id}",
+    )
 
 
 @app.route("/games/<game_id>")
@@ -267,6 +284,49 @@ def get_experiment_summary(experiment_id: str, revision: int):
         )
     except ExperimentNotFound:
         return jsonify({"error": "Summary not found"}), 404
+
+
+@app.route("/api/experiments/<experiment_id>/games/<game_id>/report")
+def get_experiment_game_report(experiment_id: str, game_id: str):
+    raw_private = request.args.get("include_private", "false").lower()
+    if raw_private not in {"true", "false"}:
+        return jsonify({"error": "include_private must be true or false"}), 400
+    try:
+        repository = experiment_game_repository(experiment_root, experiment_id)
+        report = load_full_report(repository, game_id)
+    except (ExperimentNotFound, InvalidGameId):
+        report = None
+    if report is None:
+        return jsonify({"error": "Game not found"}), 404
+    report.setdefault("links", {})["raw"] = (
+        f"/api/experiments/{experiment_id}/games/{game_id}/raw"
+    )
+    if raw_private == "true":
+        report["privacy"] = {
+            "include_private": True,
+            "spoiler_protection_only": True,
+        }
+        response = jsonify(report)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    return jsonify(build_public_report(report))
+
+
+@app.route("/api/experiments/<experiment_id>/games/<game_id>/raw")
+def download_experiment_game_log(experiment_id: str, game_id: str):
+    try:
+        repository = experiment_game_repository(experiment_root, experiment_id)
+        path = repository.log_path(game_id)
+    except (ExperimentNotFound, InvalidGameId):
+        return jsonify({"error": "Game not found"}), 404
+    if not path.exists():
+        return jsonify({"error": "Game not found"}), 404
+    response = send_file(
+        path.resolve(), mimetype="application/x-ndjson", as_attachment=True,
+        download_name=path.name,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.route("/api/experiments/<experiment_id>/exports/<int:revision>/<filename>")

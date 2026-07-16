@@ -14,7 +14,7 @@
             <div id="report-statuses" class="status-row"></div>
         </div>
         <div class="report-actions">
-            <a href="/games">← History</a>
+            <a href="{{ history_link or '/games' }}">← History</a>
             <a id="raw-log-link" class="button-link" href="#">Raw JSONL</a>
             <button id="private-toggle" type="button">Reveal private forensic data</button>
         </div>
@@ -33,7 +33,7 @@
         <a href="#reproducibility">Reproducibility</a>
     </nav>
 
-    <main id="report-content" class="report-content hidden" data-game-id="{{ game_id or '' }}">
+    <main id="report-content" class="report-content hidden" data-game-id="{{ game_id or '' }}" data-report-api-base="{{ report_api_base or '/api/games' }}">
         <section id="overview" class="report-section">
             <div class="section-heading"><div><p class="eyebrow">At a glance</p><h2>Overview</h2></div></div>
             <div id="analysis-warning" class="analysis-warning hidden"></div>

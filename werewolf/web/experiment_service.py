@@ -20,6 +20,7 @@ from werewolf.experiments.summaries import (
     load_summary_catalog,
     load_summary_revision,
 )
+from werewolf.reporting.repository import GameRepository
 
 _EXPORTS = frozenset({
     "trials.csv", "metrics.csv", "comparisons.csv", "calibration.csv",
@@ -84,6 +85,16 @@ def load_experiment_summary(root: Path, experiment_id: str,
         return load_summary_revision(root, experiment_id, revision)
     except (ManifestError, SummaryError) as exc:
         raise ExperimentNotFound("Summary not found") from exc
+
+
+def experiment_game_repository(root: Path, experiment_id: str) -> GameRepository:
+    """Return a report repository scoped to one experiment's game logs."""
+    experiment_id = _validated_id(experiment_id)
+    try:
+        load_verified_manifest(root, experiment_id)
+    except ManifestError as exc:
+        raise ExperimentNotFound("Experiment not found") from exc
+    return GameRepository(Path(root) / experiment_id / "games")
 
 
 def export_path(root: Path, experiment_id: str, revision: int,

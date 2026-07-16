@@ -1,5 +1,6 @@
 const reportState = { report: null, includePrivate: false };
 const gameId = document.getElementById('report-content').dataset.gameId;
+const reportApiBase = document.getElementById('report-content').dataset.reportApiBase || '/api/games';
 const svgNS = 'http://www.w3.org/2000/svg';
 
 const fmt = {
@@ -428,7 +429,7 @@ function renderReproducibility(report) {
 
 function renderReport(report) {
     reportState.report = report;
-    document.getElementById('raw-log-link').href = report.links?.raw || `/api/games/${encodeURIComponent(gameId)}/raw`;
+    document.getElementById('raw-log-link').href = report.links?.raw || `${reportApiBase}/${encodeURIComponent(gameId)}/raw`;
     renderOverview(report); renderTimeline(report); renderBeliefs(report); renderDecisions(report); renderManipulation(report); renderUsage(report); renderReproducibility(report);
     document.getElementById('report-loading').classList.add('hidden');
     document.getElementById('report-content').classList.remove('hidden');
@@ -440,7 +441,7 @@ async function loadReport(includePrivate = false) {
     document.getElementById('report-error').classList.add('hidden');
     document.getElementById('report-loading').classList.remove('hidden');
     try {
-        const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/report?include_private=${includePrivate}`);
+        const response = await fetch(`${reportApiBase}/${encodeURIComponent(gameId)}/report?include_private=${includePrivate}`);
         if (!response.ok) throw new Error(`Report request failed (${response.status})`);
         reportState.includePrivate = includePrivate;
         const report = await response.json();
