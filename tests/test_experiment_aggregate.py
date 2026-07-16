@@ -343,6 +343,22 @@ class EvidenceExtractionTests(unittest.TestCase):
         self.assertEqual(usage["tokens"]["total_tokens"], 400)
         self.assertEqual(len(usage["latencies"]), 4)
 
+    def test_usage_extraction_reuses_forensic_value_validation(self):
+        source = make_source("cond_a", 1)
+        call = next(row for row in source.rows
+                    if row.get("type") == "llm_call")
+        call["cost"] = {"source": "provider_reported", "usd": -2.0}
+        call["usage"] = {"total_tokens": -500}
+        source.data = b"".join(
+            json.dumps(row, sort_keys=True).encode("utf-8") + b"\n"
+            for row in source.rows
+        )
+        usage = extract_game_evidence(source)["usage"]
+        self.assertAlmostEqual(usage["cost_usd"], 0.003)
+        self.assertFalse(usage["cost_complete"])
+        self.assertEqual(usage["calls_with_unavailable_cost"], 1)
+        self.assertEqual(usage["tokens"]["total_tokens"], 300)
+
     def test_clean_requires_pr2_strategic_eligibility(self):
         source = make_source("cond_a", 1)
         config = source.rows[0]

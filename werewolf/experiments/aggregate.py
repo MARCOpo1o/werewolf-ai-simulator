@@ -36,7 +36,7 @@ from werewolf.engine.beliefs import (
 )
 from werewolf.evaluation.validity import classify_game
 from werewolf.experiments.canonical import jcs_sha256
-from werewolf.json_safety import as_mapping
+from werewolf.json_safety import as_mapping, nonnegative_finite_number
 from werewolf.reporting.builder import build_full_report
 from werewolf.reporting.parser import parse_game_log_bytes
 
@@ -314,36 +314,35 @@ def _belief_evidence(rows: list, config: dict) -> dict:
     }
 
 
-def _usage_evidence(rows: list) -> dict:
+def _usage_evidence(forensic_usage: dict, rows: list) -> dict:
+    """Adapt PR 2's canonical usage result for aggregate metrics.
+
+    Raw calls are consulted only for valid latency observations. Cost and
+    tokens must retain the forensic report's stricter malformed-value and
+    mixed-completeness handling.
+    """
     api = [r for r in rows
-           if r.get("type") == "llm_call" and r.get("api_attempted")]
-    cost_usd = 0.0
-    calls_with_cost = 0
-    calls_with_unavailable_cost = 0
-    tokens = defaultdict(int)
+           if r.get("type") == "llm_call" and r.get("api_attempted") is True]
     latencies = []
     for record in api:
-        cost = as_mapping(record.get("cost"))
-        usd = cost.get("usd")
-        if isinstance(usd, (int, float)) and not isinstance(usd, bool):
-            cost_usd += usd
-            calls_with_cost += 1
-        if cost.get("source") == "unavailable":
-            calls_with_unavailable_cost += 1
-        for key, value in as_mapping(record.get("usage")).items():
-            if isinstance(value, int) and not isinstance(value, bool):
-                tokens[key] += value
         latency = record.get("latency_ms")
-        if isinstance(latency, (int, float)) and not isinstance(
-            latency, bool
-        ) and latency >= 0:
+        latency = nonnegative_finite_number(latency)
+        if latency is not None:
             latencies.append(latency)
     return {
-        "api_calls": len(api),
-        "cost_usd": cost_usd if calls_with_cost else None,
-        "cost_complete": calls_with_unavailable_cost == 0,
-        "calls_with_unavailable_cost": calls_with_unavailable_cost,
-        "tokens": dict(tokens),
+        "api_calls": forensic_usage.get("attempts", 0),
+        "cost_usd": forensic_usage.get("known_cost_usd"),
+        "cost_complete": forensic_usage.get("cost_completeness") == "complete",
+        "cost_completeness": forensic_usage.get("cost_completeness"),
+        "calls_with_known_cost": forensic_usage.get(
+            "calls_with_known_cost", 0,
+        ),
+        "calls_with_unavailable_cost": forensic_usage.get(
+            "calls_without_known_cost", 0,
+        ),
+        "cost_sources": list(forensic_usage.get("cost_sources") or []),
+        "tokens": dict(forensic_usage.get("tokens") or {}),
+        "usage_reliability": forensic_usage.get("reliability"),
         "latencies": latencies,
     }
 
@@ -402,7 +401,7 @@ def extract_game_evidence(source) -> dict:
         "role_models": role_models,
         "decision_groups": _decision_groups(rows),
         "belief": _belief_evidence(rows, config),
-        "usage": _usage_evidence(rows),
+        "usage": _usage_evidence(forensic_report["usage"], rows),
     }
 
 
@@ -971,7 +970,18 @@ def analyze_v1(
         if not source.verified:
             excluded_from_totals += 1
             continue
-        usage = _usage_evidence(source.rows or [])
+        source_rows = source.rows or []
+        source_bytes = source.data
+        if source_bytes is None:
+            import json
+            source_bytes = b"".join(
+                json.dumps(row, sort_keys=True).encode("utf-8") + b"\n"
+                for row in source_rows
+            )
+        forensic = build_full_report(parse_game_log_bytes(
+            source_bytes, path=f"{source.game_id}.jsonl",
+        ))
+        usage = _usage_evidence(forensic["usage"], source_rows)
         if usage["cost_usd"] is not None:
             cost_by_type[source.record_type] += usage["cost_usd"]
             cost_known_by_type[source.record_type] += 1
@@ -983,8 +993,10 @@ def analyze_v1(
     health_cost = 0.0
     health_cost_known = 0
     for record in health_records:
-        usd = as_mapping(record.get("cost")).get("usd")
-        if isinstance(usd, (int, float)) and not isinstance(usd, bool):
+        usd = nonnegative_finite_number(
+            as_mapping(record.get("cost")).get("usd")
+        )
+        if usd is not None:
             health_cost += usd
             health_cost_known += 1
 
