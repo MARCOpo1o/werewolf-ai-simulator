@@ -121,6 +121,25 @@ class MaxRoundsTests(unittest.TestCase):
             self.assertEqual(config["max_rounds"], 20)
             self.assertEqual(config["action_failure_policy"], "fallback")
 
+    def test_abort_writes_reason_and_terminal_usage_once(self):
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = GameEngine(
+                n_players=4, n_wolves=1, n_seers=0, seed=5,
+                output_dir=tmp, api_key="", transcript_enabled=False,
+                allow_provider_fallback=True, belief_snapshots=False,
+            )
+            engine.abort("action_failure")
+            engine.abort("ignored_second_abort")
+            engine.close()
+            with open(engine.logger.filepath, encoding="utf-8") as f:
+                rows = [json.loads(line) for line in f]
+            aborts = [row for row in rows if row["type"] == "abort"]
+            usages = [row for row in rows if row["type"] == "usage_summary"]
+            self.assertEqual(len(aborts), 1)
+            self.assertEqual(aborts[0]["reason"], "action_failure")
+            self.assertEqual(len(usages), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

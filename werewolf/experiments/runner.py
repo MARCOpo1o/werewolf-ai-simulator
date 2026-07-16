@@ -330,6 +330,22 @@ def _attempt_fields(started: dict) -> dict:
     )}
 
 
+def _abort_engine(engine, reason: str) -> None:
+    """Ask real engines to persist incomplete-run evidence before close.
+
+    Test doubles and third-party factories are permitted to omit ``abort``;
+    their terminal journal row still records the failure.
+    """
+    abort = getattr(engine, "abort", None)
+    if callable(abort):
+        try:
+            abort(reason)
+        except Exception:
+            # The original execution exception is the authoritative failure.
+            # Do not hide it behind best-effort forensic logging.
+            pass
+
+
 def _default_engine_factory(entry: dict, manifest: dict, games_dir: Path):
     from werewolf.engine.game import GameEngine
     from werewolf.experiments.health import generation_from_dict
@@ -592,6 +608,7 @@ def run_experiment(
                 try:
                     engine.run()
                 except KeyboardInterrupt:
+                    _abort_engine(engine, "operator_interrupt")
                     engine.close()
                     source = reconcile_attempt_source(
                         games_dir / f"{engine.state.game_id}.jsonl",
@@ -609,6 +626,7 @@ def run_experiment(
                     writer.session_aborted("operator interrupt")
                     raise
                 except Exception as exc:
+                    _abort_engine(engine, exc.__class__.__name__)
                     engine.close()
                     source = reconcile_attempt_source(
                         games_dir / f"{engine.state.game_id}.jsonl",

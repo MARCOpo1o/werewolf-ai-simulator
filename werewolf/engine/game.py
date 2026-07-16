@@ -153,6 +153,7 @@ class GameEngine:
             raise ValueError("max_rounds must be >= 1 when set")
         self.max_rounds = max_rounds
         self._closed = False
+        self._aborted = False
         if discussion_cycles < 1:
             raise ValueError("discussion_cycles must be >= 1")
         self.discussion_cycles = discussion_cycles
@@ -507,6 +508,23 @@ class GameEngine:
             return
         self.logger.close()
         self._closed = True
+
+    def abort(self, reason: str) -> None:
+        """Persist terminal evidence for an incomplete game, once.
+
+        Formal experiment execution calls this after a strategic failure,
+        round limit, or operator interruption. The canonical log retains the
+        abort reason and closed usage accounting even though it has no winner.
+        """
+        if self._aborted or self.state.winner is not None:
+            return
+        self.logger.log_abort(
+            reason=str(reason),
+            round_number=self.state.round,
+            phase=self.state.phase,
+        )
+        self.logger.log_usage_summary(self.ledger.game_summary())
+        self._aborted = True
 
     def _run_night(self):
         self._set_phase("night_wolf_chat")

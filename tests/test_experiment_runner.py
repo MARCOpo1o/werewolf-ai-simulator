@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -284,6 +285,26 @@ class RunnerRetryTests(unittest.TestCase):
             self.assertIn("simulated provider explosion",
                           failed["sanitized_error"])
             self.assertEqual(failed["source_status"], "missing_game_log")
+
+    def test_failed_real_engine_log_has_abort_and_usage_evidence(self):
+        def limited_factory(entry, manifest, game_directory):
+            engine = _default_engine_factory(entry, manifest, game_directory)
+            engine.max_rounds = 1
+            return engine
+
+        with tempfile.TemporaryDirectory() as tmp:
+            write_manifest(tmp, make_manifest(seeds=(9001,)))
+            counts = run(tmp, engine_factory=limited_factory)
+            self.assertEqual(counts["failed"], 1)
+            failed = [record for record in read_journal(
+                journal_path(tmp, "exp1"),
+            ).records if record["record_type"] == "trial_failed"][0]
+            log = games_dir(tmp, "exp1") / f"{failed['game_id']}.jsonl"
+            rows = [json.loads(line) for line in log.read_text().splitlines()]
+            self.assertEqual([row["type"] for row in rows].count("abort"), 1)
+            self.assertEqual(
+                [row["type"] for row in rows].count("usage_summary"), 1,
+            )
 
 
 class RunnerGateTests(unittest.TestCase):

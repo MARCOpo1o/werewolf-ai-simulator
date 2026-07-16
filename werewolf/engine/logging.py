@@ -33,6 +33,20 @@ class JSONLLogger:
             "remaining": remaining
         })
 
+    def log_abort(self, *, reason: str, round_number: int, phase: str):
+        """Terminal evidence for an incomplete formal-run game.
+
+        Unlike an outcome, an abort never fabricates a winner. It records why
+        the engine stopped before the terminal usage summary is written.
+        """
+        self._write({
+            "type": "abort",
+            "abort_schema_version": 1,
+            "reason": reason,
+            "round": round_number,
+            "phase": phase,
+        })
+
     def _write(self, obj: dict):
         if self.file.closed:
             return
