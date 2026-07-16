@@ -394,11 +394,18 @@ def extract_game_evidence(source) -> dict:
     validity = overview["validity"]
     terminal = source.terminal_record
     role_models = {}
-    for role, info in as_mapping(config.get("role_models")).items():
-        info = as_mapping(info)
+    role_active = {}
+    for role, raw_info in as_mapping(config.get("role_models")).items():
+        info = as_mapping(raw_info)
         role_models[role] = (
+            raw_info if isinstance(raw_info, str) else
             info.get("requested") or info.get("alias")
             or info.get("requested_model")
+        )
+        recorded_active = info.get("active")
+        role_active[role] = (
+            recorded_active if isinstance(recorded_active, bool)
+            else role != "seer" or config.get("n_seers", 0) > 0
         )
     return {
         "trial_id": source.trial_id,
@@ -424,6 +431,7 @@ def extract_game_evidence(source) -> dict:
             "n_seers": config.get("n_seers"),
         }),
         "role_models": role_models,
+        "role_active": role_active,
         "decision_groups": _decision_groups(rows),
         "belief": _belief_evidence(rows, config),
         "usage": _usage_evidence(forensic_report["usage"], rows),
@@ -539,26 +547,40 @@ def _view_metrics(games: list, bootstrap: dict, label: str) -> dict:
             ) or {}),
         }
 
-    # Descriptive win rates by assigned model and role (never a ranking).
+    # Descriptive team-outcome association by assigned model and role.
+    # These are not causal model effects: every role shares a game outcome.
     by_model_role: dict = {}
     for game in games:
-        assignments = {
-            "werewolf": game["role_models"].get("werewolf"),
-            "village": game["role_models"].get("villager"),
-        }
-        for side, model in assignments.items():
-            if not model:
+        for role in ("werewolf", "villager", "seer"):
+            model = game["role_models"].get(role)
+            if not model or not game["role_active"].get(role, False):
                 continue
             entry = by_model_role.setdefault(model, {}).setdefault(
-                side, {"games": 0, "wins": 0},
+                role, {
+                    "games": 0, "wins": 0, "seeds": set(),
+                    "observations_by_seed": defaultdict(list),
+                },
             )
             entry["games"] += 1
-            won = (game["winner"] == "wolf") == (side == "werewolf")
+            won = game["winner"] == (
+                "wolf" if role == "werewolf" else "village"
+            )
             entry["wins"] += 1 if won else 0
-    for model, sides in by_model_role.items():
-        for side, entry in sides.items():
-            entry["win_rate"] = (
-                entry["wins"] / entry["games"] if entry["games"] else None
+            entry["seeds"].add(game["seed"])
+            entry["observations_by_seed"][game["seed"]].append(
+                1.0 if won else 0.0
+            )
+    for model, roles in by_model_role.items():
+        for role, entry in roles.items():
+            interval = boot(
+                entry.pop("observations_by_seed"), mean_statistic,
+                "descriptive_win_rate_by_model_role", model, role,
+            )
+            entry["seed_count"] = len(entry.pop("seeds"))
+            entry.update(interval or {"estimate": None})
+            entry["win_rate"] = entry["estimate"]
+            entry["interpretation"] = (
+                "descriptive shared team outcome; not a causal role effect"
             )
     metrics["descriptive_win_rate_by_model_role"] = by_model_role
 

@@ -446,6 +446,43 @@ class AnalyzeV1Tests(unittest.TestCase):
         self.assertEqual(cond_a["village_win_rate"]["interval_status"],
                          "ok")
 
+    def test_model_role_results_include_active_seer_with_intervals(self):
+        source = make_source("cond_a", 1)
+        config = source.rows[0]
+        config["n_seers"] = 1
+        config["role_map"]["3"] = {"role": "seer", "team": "village"}
+        config["role_models"]["seer"] = {
+            "requested": "gemini_flash_lite", "active": True,
+        }
+        source.data = b"".join(
+            json.dumps(row, sort_keys=True).encode("utf-8") + b"\n"
+            for row in source.rows
+        )
+        manifest = build_experiment_manifest(
+            experiment_id="seer_roles", conditions=TWO_CONDITIONS,
+            seeds=[1], repetitions=1,
+            game={"n_players": 4, "n_wolves": 1, "n_seers": 1},
+            comparisons=[COMPARISON],
+        )
+        analysis = run_analysis([source], manifest)
+        results = analysis["views"]["all_completed"]["overall"][
+            "descriptive_win_rate_by_model_role"
+        ]
+        seer = results["gemini_flash_lite"]["seer"]
+        self.assertEqual(seer["games"], 1)
+        self.assertEqual(seer["wins"], 1)
+        self.assertEqual(seer["seed_count"], 1)
+        self.assertEqual(seer["estimate"], 1.0)
+        self.assertEqual(seer["interval_status"], "insufficient_clusters")
+        self.assertIn("not a causal", seer["interpretation"])
+
+    def test_inactive_seer_is_omitted_from_model_role_results(self):
+        analysis = run_analysis(self._sources())
+        results = analysis["views"]["all_completed"]["overall"][
+            "descriptive_win_rate_by_model_role"
+        ]
+        self.assertNotIn("seer", results["gemini_flash_lite"])
+
     def test_pooled_group_and_belief_rates(self):
         analysis = run_analysis(self._sources())
         overall = analysis["views"]["all_completed"]["overall"]
