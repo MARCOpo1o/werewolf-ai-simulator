@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from werewolf.experiments.aggregate import (
@@ -120,6 +121,7 @@ def game_rows(game_id, seed, *, winner="village", fallback=False,
         "game_id": game_id,
         "seed": seed,
         "n_players": 4, "n_wolves": 1, "n_seers": 0,
+        "event_schema_version": 1,
         "belief_snapshots": beliefs,
         "role_map": role_map,
         "role_models": {
@@ -192,6 +194,10 @@ def make_source(condition_id, seed, repetition=0, *, winner="village",
             "verified" if verified else "source_modified_after_completion"
         ),
         terminal_record=terminal,
+        data=b"".join(
+            json.dumps(row, sort_keys=True).encode("utf-8") + b"\n"
+            for row in rows
+        ) if verified else None,
         rows=rows if verified else None,
     )
 
@@ -336,6 +342,20 @@ class EvidenceExtractionTests(unittest.TestCase):
         self.assertTrue(usage["cost_complete"])
         self.assertEqual(usage["tokens"]["total_tokens"], 400)
         self.assertEqual(len(usage["latencies"]), 4)
+
+    def test_clean_requires_pr2_strategic_eligibility(self):
+        source = make_source("cond_a", 1)
+        config = source.rows[0]
+        config["event_schema_version"] = 3
+        # Version 3 provenance requires linked events. This synthetic game
+        # remains validity-clean but must not enter clean_eligible metrics.
+        source.data = b"".join(
+            json.dumps(row, sort_keys=True).encode("utf-8") + b"\n"
+            for row in source.rows
+        )
+        evidence = extract_game_evidence(source)
+        self.assertTrue(evidence["clean"])
+        self.assertEqual(evidence["analysis_eligibility"], "ineligible")
 
 
 class AnalyzeV1Tests(unittest.TestCase):

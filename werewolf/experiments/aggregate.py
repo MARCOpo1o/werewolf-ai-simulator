@@ -37,6 +37,8 @@ from werewolf.engine.beliefs import (
 from werewolf.evaluation.validity import classify_game
 from werewolf.experiments.canonical import jcs_sha256
 from werewolf.json_safety import as_mapping
+from werewolf.reporting.builder import build_full_report
+from werewolf.reporting.parser import parse_game_log_bytes
 
 AGGREGATE_ANALYSIS_VERSION = 1
 COMPARISON_METHOD_VERSION = 1
@@ -342,10 +344,23 @@ def _usage_evidence(rows: list) -> dict:
 def extract_game_evidence(source) -> dict:
     """Everything aggregate metrics need from one verified game."""
     rows = source.rows or []
+    raw_bytes = source.data
+    if raw_bytes is None:
+        # In-memory test fixtures may predate the byte-capture field. Actual
+        # summaries always pass the captured canonical bytes from snapshot.py.
+        import json
+        raw_bytes = b"".join(
+            json.dumps(row, sort_keys=True).encode("utf-8") + b"\n"
+            for row in rows
+        )
+    forensic_report = build_full_report(parse_game_log_bytes(
+        raw_bytes, path=f"{source.game_id}.jsonl",
+    ))
+    overview = forensic_report["overview"]
     config = next(
         (r for r in rows if r.get("type") == "config"), {},
     )
-    validity = classify_game(rows)
+    validity = overview["validity"]
     terminal = source.terminal_record
     role_models = {}
     for role, info in as_mapping(config.get("role_models")).items():
@@ -366,6 +381,11 @@ def extract_game_evidence(source) -> dict:
         "recovered": bool(terminal.get("recovered")),
         "clean": validity["clean"],
         "violations": validity["violations"],
+        "analysis_eligibility": overview["analysis_eligibility"],
+        "analysis_exclusion_reasons": overview[
+            "analysis_exclusion_reasons"
+        ],
+        "usage_reliability": overview["usage_reliability"],
         "role_map_hash": jcs_sha256(as_mapping(config.get("role_map"))),
         "game_rules_hash": jcs_sha256({
             "n_players": config.get("n_players"),
@@ -811,8 +831,14 @@ def analyze_v1(
 
     views = {
         VIEW_ALL_COMPLETED: eligible_games,
-        VIEW_CLEAN: [g for g in eligible_games if g["clean"]],
-        VIEW_NOT_CLEAN: [g for g in eligible_games if not g["clean"]],
+        VIEW_CLEAN: [
+            g for g in eligible_games
+            if g["clean"] and g["analysis_eligibility"] == "eligible"
+        ],
+        VIEW_NOT_CLEAN: [
+            g for g in eligible_games
+            if not g["clean"] or g["analysis_eligibility"] != "eligible"
+        ],
     }
     view_metrics = {
         name: {

@@ -87,6 +87,7 @@ class GameSource:
     observed_game_sha256: Optional[str]
     source_status: str
     terminal_record: dict = field(repr=False)
+    data: Optional[bytes] = field(default=None, repr=False)
     rows: Optional[list] = field(default=None, repr=False)
 
     @property
@@ -168,6 +169,7 @@ def capture_game_sources(games_dir, lifecycle: LifecycleSnapshot) -> list:
                 observed_game_sha256=observed,
                 source_status=status,
                 terminal_record=terminal,
+                data=data if status == SOURCE_VERIFIED else None,
                 rows=rows,
             ))
     sources.sort(key=lambda s: (s.trial_id, s.attempt_id))

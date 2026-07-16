@@ -55,11 +55,25 @@ def parse_game_log(path: str | Path) -> ParsedGameLog:
     path = Path(path)
     data = path.read_bytes()
     stat = path.stat()
+    return parse_game_log_bytes(
+        data, path=path, source_mtime_ns=stat.st_mtime_ns,
+    )
+
+
+def parse_game_log_bytes(
+    data: bytes, *, path: str | Path, source_mtime_ns: int = 0,
+) -> ParsedGameLog:
+    """Parse already-captured bytes without reopening a mutable log.
+
+    Aggregate analysis uses this to preserve its single-read source
+    integrity contract; PR 2 file callers keep using ``parse_game_log``.
+    """
+    path = Path(path)
     parsed = ParsedGameLog(
         path=path,
         sha256=hashlib.sha256(data).hexdigest(),
         source_size=len(data),
-        source_mtime_ns=stat.st_mtime_ns,
+        source_mtime_ns=source_mtime_ns,
     )
     counts: dict[str, int] = {}
     for source_line, raw in enumerate(data.splitlines(), 1):
