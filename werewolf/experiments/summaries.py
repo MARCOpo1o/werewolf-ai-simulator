@@ -20,6 +20,7 @@ from typing import Callable, Optional
 
 from werewolf.experiments import manifest as manifest_store
 from werewolf.experiments.analysis_registry import (
+    AnalysisPolicyUnavailable,
     current_analysis_contract,
     registry_key,
     resolve_analysis_implementation,
@@ -164,13 +165,27 @@ def summarize_experiment(
             manifest_store.games_dir(root, experiment_id), lifecycle,
         )
 
+        current_runtime = analysis_runtime_hash()
         if analysis_policy == "pinned":
             analysis_contract = manifest["analysis_contract"]
+            pinned_runtime = analysis_contract.get("analysis_runtime_hash")
+            if pinned_runtime != current_runtime:
+                raise AnalysisPolicyUnavailable(
+                    "analysis_policy_unavailable: pinned analysis runtime "
+                    "does not match this checkout; run from the recorded "
+                    "analysis implementation or use --analysis-policy current."
+                )
         else:
             analysis_contract = current_analysis_contract(
                 bootstrap=manifest["analysis_contract"].get("bootstrap"),
             )
-        current_runtime = analysis_runtime_hash()
+            # The current-policy revision must self-describe the exact
+            # implementation selected now, even when a caller injects a
+            # deterministic runtime hash in tests.
+            analysis_contract = {
+                **analysis_contract,
+                "analysis_runtime_hash": current_runtime,
+            }
         if analyze is None:
             analyze = resolve_analysis_implementation(analysis_contract)
 

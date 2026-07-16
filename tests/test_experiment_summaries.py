@@ -228,10 +228,21 @@ class SummaryRevisionTests(unittest.TestCase):
                 "werewolf.experiments.summaries.analysis_runtime_hash",
                 return_value="9" * 64,
             ):
-                second = summarize(tmp)
+                second = summarize(tmp, analysis_policy="current")
             self.assertTrue(second["created"])
             self.assertNotEqual(second["summary_input_sha256"],
                                 first["summary_input_sha256"])
+
+    def test_pinned_policy_fails_closed_when_runtime_drifted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_offline_experiment(tmp)
+            with mock.patch(
+                "werewolf.experiments.summaries.analysis_runtime_hash",
+                return_value="9" * 64,
+            ):
+                with self.assertRaises(AnalysisPolicyUnavailable) as ctx:
+                    summarize(tmp)
+            self.assertIn("analysis_policy_unavailable", str(ctx.exception))
 
     def test_current_policy_records_current_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
