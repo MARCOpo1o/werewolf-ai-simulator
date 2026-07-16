@@ -63,6 +63,11 @@ def get_code_commit() -> Optional[str]:
     return _CODE_COMMIT or None
 
 
+class GameRoundLimitExceeded(RuntimeError):
+    """The game reached max_rounds without a winner. The game is
+    aborted rather than recorded with a fabricated outcome."""
+
+
 class GameEngine:
     PHASE_ORDER = [
         "night_wolf_chat",
@@ -99,6 +104,8 @@ class GameEngine:
         role_models: dict = None,
         role_providers: dict = None,
         allow_provider_fallback: bool = False,
+        action_failure_policy: str = "fallback",
+        max_rounds: int = None,
     ):
         """role_models: optional {"werewolf": <alias-or-model-id>,
         "villager": ..., "seer": ...} for heterogeneous games (separates
@@ -137,6 +144,14 @@ class GameEngine:
         )
         self.reasoning_override = normalized_reasoning
         self.allow_provider_fallback = allow_provider_fallback
+        if action_failure_policy not in ("fallback", "abort_game"):
+            raise ValueError(
+                f"Unknown action_failure_policy: {action_failure_policy!r}"
+            )
+        self.action_failure_policy = action_failure_policy
+        if max_rounds is not None and max_rounds < 1:
+            raise ValueError("max_rounds must be >= 1 when set")
+        self.max_rounds = max_rounds
         self._closed = False
         if discussion_cycles < 1:
             raise ValueError("discussion_cycles must be >= 1")
@@ -204,6 +219,7 @@ class GameEngine:
                     run_context=run_context,
                     model_alias=model_alias,
                     generation=self.generation_config,
+                    action_failure_policy=self.action_failure_policy,
                 )
                 assignment = {
                     "alias": spec.alias,
@@ -250,6 +266,8 @@ class GameEngine:
                 "requested_generation_config": self.requested_generation_config.to_json_dict(),
                 "requested_reasoning_override": self.reasoning_override,
                 "discussion_cycles": self.discussion_cycles,
+                "action_failure_policy": self.action_failure_policy,
+                "max_rounds": self.max_rounds,
                 "role_models": self.role_models_resolved,
                 "limits": limits_dict(),
                 "code_commit": get_code_commit(),
@@ -338,6 +356,7 @@ class GameEngine:
                     spec,
                     self.reasoning_override,
                 ),
+                action_failure_policy=self.action_failure_policy,
             )
         # There is no single effective configuration in a heterogeneous game.
         self.generation_config = self.requested_generation_config
@@ -347,6 +366,7 @@ class GameEngine:
         self.transcript.print_role_reveal(self.players)
 
         while self.state.winner is None:
+            self._check_round_limit()
             self.state.round += 1
             self._run_night()
 
@@ -376,6 +396,7 @@ class GameEngine:
             should_return_phase = True
 
             if phase_name == "night_wolf_chat":
+                self._check_round_limit()
                 self.state.round += 1
                 self._set_phase("night_wolf_chat")
                 self.transcript.print_phase_header(self.state.round, self.state.phase)
@@ -472,6 +493,13 @@ class GameEngine:
             if record.resolved_model and record.context.player_role in observed:
                 observed[record.context.player_role].add(record.resolved_model)
         return {role: sorted(models) for role, models in observed.items()}
+
+    def _check_round_limit(self) -> None:
+        if self.max_rounds is not None and self.state.round >= self.max_rounds:
+            raise GameRoundLimitExceeded(
+                f"Game {self.state.game_id} reached the configured "
+                f"max_rounds limit ({self.max_rounds}) without a winner"
+            )
 
     def close(self) -> None:
         """Release game resources. Safe to call more than once."""

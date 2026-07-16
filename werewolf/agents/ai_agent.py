@@ -27,6 +27,21 @@ logger = logging.getLogger("werewolf.agent")
 MAX_RETRIES = 3
 
 
+class ActionFailureAbort(RuntimeError):
+    """Raised instead of using a random fallback when the game runs
+    under action_failure_policy="abort_game". A game that would need a
+    fallback for a strategic action is already strategically dirty;
+    aborting stops spending money on it."""
+
+    def __init__(self, player_id: int, required_action: str, detail: str):
+        super().__init__(
+            f"P{player_id} could not produce a valid {required_action} "
+            f"action ({detail}) and action_failure_policy is abort_game"
+        )
+        self.player_id = player_id
+        self.required_action = required_action
+
+
 class AIAgent:
     """Prompt construction, response parsing, retry/fallback policy.
 
@@ -49,7 +64,13 @@ class AIAgent:
         model_alias: Optional[str] = None,
         reasoning_effort: Optional[str] = None,
         generation: Optional[GenerationConfig] = None,
+        action_failure_policy: str = "fallback",
     ):
+        if action_failure_policy not in ("fallback", "abort_game"):
+            raise ValueError(
+                f"Unknown action_failure_policy: {action_failure_policy!r}"
+            )
+        self.action_failure_policy = action_failure_policy
         self.player_id = player_id
         self.role = role
         self.team = team
@@ -93,6 +114,9 @@ class AIAgent:
             self._record_non_api(
                 observation, call_id, attempt=0,
                 category=ErrorCategory.MISSING_API_KEY,
+            )
+            self._abort_if_strategic_fallback(
+                required_action, "no provider available"
             )
             self._record_non_api(
                 observation, call_id, attempt=0,
@@ -189,6 +213,10 @@ class AIAgent:
             logger.warning(f"P{self.player_id} invalid action: {error}")
             errors.append(error)
 
+        self._abort_if_strategic_fallback(
+            required_action,
+            f"no valid action after {attempts_made} attempt(s)",
+        )
         logger.warning(
             f"P{self.player_id} using fallback after {attempts_made} attempt(s)"
         )
@@ -202,6 +230,15 @@ class AIAgent:
         )
         fallback["_source_call_id"] = call_id
         return fallback
+
+    def _abort_if_strategic_fallback(
+        self, required_action: str, detail: str
+    ) -> None:
+        """assess_beliefs is instrumentation, not gameplay: its fallback
+        surfaces as snapshot coverage, never as a game abort."""
+        if (self.action_failure_policy == "abort_game"
+                and required_action != "assess_beliefs"):
+            raise ActionFailureAbort(self.player_id, required_action, detail)
 
     # ------------------------------------------------------------------
     # Usage recording
@@ -513,6 +550,7 @@ def create_agents(
     model_alias: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
     generation: Optional[GenerationConfig] = None,
+    action_failure_policy: str = "fallback",
 ) -> dict[int, AIAgent]:
     """Backward-compatible factory. If no provider is injected, one is
     built from (model, api_key) via the registry; with no key or SDK the
@@ -539,6 +577,7 @@ def create_agents(
             model_alias=model_alias,
             reasoning_effort=reasoning_effort,
             generation=generation,
+            action_failure_policy=action_failure_policy,
         )
 
     return agents
