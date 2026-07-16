@@ -202,6 +202,16 @@ def summarize_experiment(
         existing = list_summary_revisions(root, experiment_id)
         for revision in existing:
             if revision["summary_input_sha256"] == input_sha:
+                # Exports are derived, not part of immutable summary
+                # identity. Rebuild them on a no-op summary so a deleted or
+                # previously interrupted export set is recoverable.
+                if exporter is not None:
+                    exporter(
+                        root, experiment_id,
+                        load_summary_revision(
+                            root, experiment_id, revision["revision"],
+                        ),
+                    )
                 catalog = load_summary_catalog(root, experiment_id)
                 return {
                     "revision": revision["revision"],
@@ -242,9 +252,13 @@ def summarize_experiment(
         }
         path = summary_revision_path(root, experiment_id, revision_number)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "x", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2, sort_keys=True)
-            f.write("\n")
+        if path.exists():  # Defensive: the analysis lock should prevent it.
+            raise SummaryError(
+                f"Refusing to replace immutable summary revision {path}"
+            )
+        # atomic_write_json flushes/fsyncs a same-directory temporary file
+        # before publication. The revision remains immutable after publish.
+        atomic_write_json(path, payload)
 
         if exporter is not None:
             exporter(root, experiment_id, payload)

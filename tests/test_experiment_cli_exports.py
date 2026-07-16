@@ -57,6 +57,14 @@ class ExportTests(unittest.TestCase):
                      "calibration.csv"):
             self.assertTrue((self.directory / name).is_file(), name)
 
+    def test_noop_summary_rebuilds_deleted_exports(self):
+        (self.directory / "metrics.csv").unlink()
+        result = summarize_experiment(
+            self.tmp, "exp1", exporter=write_summary_exports,
+        )
+        self.assertFalse(result["created"])
+        self.assertTrue((self.directory / "metrics.csv").is_file())
+
     def test_every_row_carries_full_provenance(self):
         payload = json.loads(
             Path(self.tmp, "exp1", "summaries", "summary_0001.json")
