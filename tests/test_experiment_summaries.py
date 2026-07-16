@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.test_experiment_runner import (
-    boom_factory,
+    boom_factory, offline_engine_factory,
     make_manifest,
     quiet,
     ready_prober,
@@ -54,6 +54,7 @@ def run_offline_experiment(tmp, **run_kwargs):
     write_manifest(tmp, make_manifest())
     run_kwargs.setdefault("health_prober", ready_prober)
     run_kwargs.setdefault("progress", quiet)
+    run_kwargs.setdefault("engine_factory", offline_engine_factory)
     return run_experiment(tmp, "exp1", **run_kwargs)
 
 

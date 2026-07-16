@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.test_experiment_runner import (
-    make_manifest,
+    make_manifest, offline_engine_factory,
     quiet,
     ready_prober,
 )
@@ -29,7 +29,10 @@ from werewolf.experiments.summaries import summarize_experiment
 
 def run_offline(tmp):
     write_manifest(tmp, make_manifest(game={"belief_snapshots": True}))
-    run_experiment(tmp, "exp1", health_prober=ready_prober, progress=quiet)
+    run_experiment(
+        tmp, "exp1", health_prober=ready_prober, progress=quiet,
+        engine_factory=offline_engine_factory,
+    )
 
 
 def read_csv(path: Path) -> list:

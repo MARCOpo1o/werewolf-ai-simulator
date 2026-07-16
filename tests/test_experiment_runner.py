@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from werewolf.experiments.health import probe_model
+from werewolf.engine.game import GameEngine
 from werewolf.experiments.journal import (
     JournalWriter,
     TRIAL_COMPLETED,
@@ -95,6 +96,33 @@ class BoomEngine:
 
 def boom_factory(entry, manifest, games_directory):
     return BoomEngine(f"game_boom_{entry['trial_id'][:12]}")
+
+
+def offline_engine_factory(entry, manifest, games_directory):
+    """Explicit no-provider factory for tests, even with local .env keys."""
+    execution = manifest["execution_contract"]
+    game = execution["game"]
+    policies = execution["policies"]
+    roles = execution["conditions"][entry["condition_id"]]["role_models"]
+    return GameEngine(
+        n_players=game["n_players"], n_wolves=game["n_wolves"],
+        n_seers=game["n_seers"], seed=entry["seed"],
+        output_dir=str(games_directory), api_key="", model=roles["villager"],
+        role_models=roles,
+        role_providers={role: None for role in roles},
+        allow_provider_fallback=True,
+        action_failure_policy=policies["action_failure_policy"],
+        max_rounds=policies["max_rounds"],
+        agent_action_max_attempts=policies["agent_action_max_attempts"],
+        retryable_error_categories=policies["retryable_errors"],
+        retry_backoff=policies["retry_backoff"],
+        request_timeout_seconds=policies["request_timeout_seconds"],
+        transcript_enabled=False, show_all_channels=False,
+        belief_snapshots=game["belief_snapshots"],
+        discussion_cycles=game["discussion_cycles"],
+        batch_id=f"fixture/{entry['condition_id']}",
+        trial_index=entry["trial_index"],
+    )
 
 
 def quiet(*args, **kwargs):
