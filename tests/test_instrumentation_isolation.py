@@ -95,6 +95,7 @@ class InstrumentationIsolationTests(unittest.TestCase):
                 output_dir=tmpdir, api_key="", provider=provider,
                 transcript_enabled=False, show_all_channels=False,
             )
+            self.addCleanup(engine.close)
             engine.state.round = 1
             cursors_before = {
                 p.id: p.last_seen_event_idx for p in engine.players.values()
