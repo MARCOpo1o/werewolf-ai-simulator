@@ -117,8 +117,8 @@ class CrossedExperimentTests(unittest.TestCase):
         self.assertEqual(conditions["a_homogeneous"]["villager"], "A")
 
     def test_mini_experiment_shares_seeds_and_roles_across_conditions(self):
-        # No API keys -> providers are None -> deterministic fallback games.
-        # Exercises the full runner: manifest, summaries, spec block.
+        # Explicitly offline providers keep this legacy development runner
+        # network-free even when local credentials are configured.
         with tempfile.TemporaryDirectory() as tmpdir:
             summary = run_crossed_experiment(
                 experiment_id="test_exp",
@@ -130,6 +130,11 @@ class CrossedExperimentTests(unittest.TestCase):
                 output_dir=tmpdir,
                 quiet=True,
                 belief_snapshots=False,
+                role_providers={
+                    "werewolf": None,
+                    "villager": None,
+                    "seer": None,
+                },
                 allow_provider_fallback=True,
                 progress=lambda *_: None,
             )
