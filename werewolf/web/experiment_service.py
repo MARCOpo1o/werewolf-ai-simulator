@@ -23,7 +23,8 @@ from werewolf.experiments.summaries import (
 from werewolf.reporting.repository import GameRepository
 
 _EXPORTS = frozenset({
-    "trials.csv", "metrics.csv", "comparisons.csv", "calibration.csv",
+    "trials.csv", "attempts.csv", "metrics.csv", "comparisons.csv",
+    "calibration.csv",
 })
 
 

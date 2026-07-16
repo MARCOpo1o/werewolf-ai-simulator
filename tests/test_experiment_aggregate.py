@@ -692,9 +692,38 @@ class AnalyzeV1Tests(unittest.TestCase):
             operational["cost"]["by_record_type_usd"]["trial_failed"],
             0.04,  # 4 attempted calls at $0.01 in the failed attempt
         )
+        attempts = analysis["attempts"]
+        failed = [item for item in attempts
+                  if item["status"] == "trial_failed"]
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(failed[0]["source_status"], "verified")
+        self.assertAlmostEqual(failed[0]["known_cost_usd"], 0.04)
         # failed work never enters the analysis views
         self.assertEqual(
             analysis["views"]["all_completed"]["overall"]["games"], 12,
+        )
+
+    def test_operational_attempt_rows_include_interrupted_and_open(self):
+        interrupted = make_source(
+            "cond_a", 1, repetition=1, record_type="trial_interrupted",
+        )
+        open_started = {
+            "record_type": "trial_started",
+            "trial_id": "trial_open", "attempt_id": "trial_open_a1",
+            "attempt_number": 1, "trial_index": 99,
+            "scheduler_position": 99, "condition_id": "cond_b",
+            "seed": 99, "repetition": 0, "game_id": "game_open",
+        }
+        analysis = run_analysis(
+            [interrupted], lifecycle_records=[open_started],
+        )
+        by_status = {item["status"]: item for item in analysis["attempts"]}
+        self.assertEqual(
+            by_status["trial_interrupted"]["source_status"], "verified",
+        )
+        self.assertEqual(
+            by_status["running"]["source_status"],
+            "open_attempt_not_snapshotted",
         )
 
     def test_no_composite_score_is_exposed(self):

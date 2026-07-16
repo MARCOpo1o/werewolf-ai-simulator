@@ -56,7 +56,7 @@ class ExportTests(unittest.TestCase):
         self._tmp.cleanup()
 
     def test_all_export_files_exist(self):
-        for name in ("trials.csv", "metrics.csv", "comparisons.csv",
+        for name in ("trials.csv", "attempts.csv", "metrics.csv", "comparisons.csv",
                      "calibration.csv"):
             self.assertTrue((self.directory / name).is_file(), name)
 
@@ -73,7 +73,8 @@ class ExportTests(unittest.TestCase):
             Path(self.tmp, "exp1", "summaries", "summary_0001.json")
             .read_text(encoding="utf-8")
         )
-        for name in ("trials.csv", "metrics.csv", "calibration.csv"):
+        for name in ("trials.csv", "attempts.csv", "metrics.csv",
+                     "calibration.csv"):
             rows = read_csv(self.directory / name)
             self.assertTrue(rows, name)
             for row in rows:
@@ -104,6 +105,13 @@ class ExportTests(unittest.TestCase):
         self.assertTrue(all(r["analysis_eligibility"]
                             for r in rows))
         self.assertTrue(all(r["usage_reliability"] for r in rows))
+
+    def test_attempts_export_lists_every_operational_attempt(self):
+        rows = read_csv(self.directory / "attempts.csv")
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(r["status"] == "trial_completed" for r in rows))
+        self.assertTrue(all(r["source_status"] == "verified" for r in rows))
+        self.assertTrue(all(r["cost_completeness"] for r in rows))
 
     def test_metrics_export_is_long_form(self):
         rows = read_csv(self.directory / "metrics.csv")

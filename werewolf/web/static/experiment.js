@@ -166,7 +166,7 @@ function renderReproducibility() {
     const list = clear('reproducibility-values');
     for (const [label, content] of Object.entries(values)) { const dt = document.createElement('dt'); dt.textContent = label; const dd = document.createElement('dd'); dd.textContent = value(content); list.append(dt, dd); }
     const exports = clear('export-links');
-    for (const name of ['trials.csv', 'metrics.csv', 'comparisons.csv', 'calibration.csv']) { const link = document.createElement('a'); link.href = `/api/experiments/${encodeURIComponent(experimentId)}/exports/${state.revision}/${name}`; link.textContent = `Download ${name}`; exports.append(link); }
+    for (const name of ['trials.csv', 'attempts.csv', 'metrics.csv', 'comparisons.csv', 'calibration.csv']) { const link = document.createElement('a'); link.href = `/api/experiments/${encodeURIComponent(experimentId)}/exports/${state.revision}/${name}`; link.textContent = `Download ${name}`; exports.append(link); }
 }
 
 async function loadSummary(revision) {

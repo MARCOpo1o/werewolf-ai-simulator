@@ -140,6 +140,28 @@ def write_summary_exports(root, experiment_id: str, summary: dict) -> Path:
         })
     _write_csv(directory / "trials.csv", trial_fields, trial_rows)
 
+    # attempts.csv: every operational attempt, including failed,
+    # interrupted, and still-open work. Strategic game metrics remain in
+    # trials.csv; this table is the audit trail for execution and spending.
+    attempt_fields = PROVENANCE_FIELDS + [
+        "trial_id", "attempt_id", "attempt_number", "trial_index",
+        "scheduler_position", "game_id", "seed", "repetition", "status",
+        "source_status", "recorded_game_sha256", "observed_game_sha256",
+        "known_cost_usd", "cost_completeness", "error_category", "reason",
+    ]
+    attempt_rows = []
+    for attempt in analysis.get("attempts", []):
+        attempt_rows.append({
+            **_provenance(
+                summary, view="operational_attempts",
+                condition=attempt["condition_id"],
+                seed_count=1, game_count=0, observation_count=1,
+            ),
+            **{field: attempt.get(field) for field in attempt_fields
+               if field not in PROVENANCE_FIELDS},
+        })
+    _write_csv(directory / "attempts.csv", attempt_fields, attempt_rows)
+
     # metrics.csv: long form, one row per scope x metric.
     metric_fields = PROVENANCE_FIELDS + [
         "metric_id", "estimate", "ci_low", "ci_high", "interval_status",

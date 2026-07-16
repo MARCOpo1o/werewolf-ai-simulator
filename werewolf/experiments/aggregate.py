@@ -1017,9 +1017,12 @@ def analyze_v1(
     cost_known_by_type: dict = defaultdict(int)
     incomplete_sources = 0
     excluded_from_totals = 0
+    source_usage_by_attempt = {}
+    source_by_attempt = {source.attempt_id: source for source in sources}
     for source in sources:
         if not source.verified:
             excluded_from_totals += 1
+            source_usage_by_attempt[source.attempt_id] = None
             continue
         source_rows = source.rows or []
         source_bytes = source.data
@@ -1033,6 +1036,7 @@ def analyze_v1(
             source_bytes, path=f"{source.game_id}.jsonl",
         ))
         usage = _usage_evidence(forensic["usage"], source_rows)
+        source_usage_by_attempt[source.attempt_id] = usage
         if usage["cost_usd"] is not None:
             cost_by_type[source.record_type] += usage["cost_usd"]
             cost_known_by_type[source.record_type] += 1
@@ -1180,6 +1184,54 @@ def analyze_v1(
         },
     }
 
+    operational_attempts = []
+    for trial in replay_state.trials.values():
+        for attempt in trial.attempts:
+            started = attempt["started"]
+            terminal = attempt["terminal"]
+            source = source_by_attempt.get(started["attempt_id"])
+            usage = source_usage_by_attempt.get(started["attempt_id"])
+            operational_attempts.append({
+                "trial_id": started["trial_id"],
+                "attempt_id": started["attempt_id"],
+                "attempt_number": started["attempt_number"],
+                "trial_index": started["trial_index"],
+                "scheduler_position": started["scheduler_position"],
+                "condition_id": started["condition_id"],
+                "seed": started["seed"],
+                "repetition": started["repetition"],
+                "game_id": started["game_id"],
+                "status": (
+                    terminal["record_type"] if terminal else "running"
+                ),
+                "source_status": (
+                    source.source_status if source else
+                    "open_attempt_not_snapshotted"
+                ),
+                "recorded_game_sha256": (
+                    source.recorded_game_sha256 if source else None
+                ),
+                "observed_game_sha256": (
+                    source.observed_game_sha256 if source else None
+                ),
+                "known_cost_usd": (
+                    usage["cost_usd"] if usage else None
+                ),
+                "cost_completeness": (
+                    usage["cost_completeness"] if usage else "unavailable"
+                ),
+                "error_category": (
+                    terminal.get("error_category") if terminal else None
+                ),
+                "reason": (
+                    terminal.get("sanitized_error")
+                    or terminal.get("reason") if terminal else None
+                ),
+            })
+    operational_attempts.sort(key=lambda item: (
+        item["trial_index"], item["attempt_number"], item["attempt_id"],
+    ))
+
     not_clean_reason_counts = defaultdict(int)
     for game in views[VIEW_NOT_CLEAN]:
         reasons = set(game["violations"])
@@ -1210,6 +1262,7 @@ def analyze_v1(
             for game in eligible_games
         ],
         "analytically_ineligible": ineligible,
+        "attempts": operational_attempts,
         "completed_not_clean_eligible_reason_counts": dict(
             sorted(not_clean_reason_counts.items())
         ),

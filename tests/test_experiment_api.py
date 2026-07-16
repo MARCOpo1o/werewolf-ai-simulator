@@ -78,6 +78,13 @@ class ExperimentApiTests(unittest.TestCase):
         self.assertIn("summary_input_sha256", response.get_data(as_text=True))
         response.close()
 
+        attempts = self.client.get(
+            "/api/experiments/exp1/exports/1/attempts.csv"
+        )
+        self.assertEqual(attempts.status_code, 200)
+        self.assertIn("attempt_number", attempts.get_data(as_text=True))
+        attempts.close()
+
         self.assertEqual(
             self.client.get("/api/experiments/exp1/exports/1/../manifest.json").status_code,
             404,
