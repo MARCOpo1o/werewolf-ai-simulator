@@ -246,12 +246,10 @@ class JournalSnapshot:
         return self.records[-1]["record_id"] if self.records else None
 
 
-def read_journal(path) -> JournalSnapshot:
-    path = Path(path)
-    try:
-        data = path.read_bytes()
-    except FileNotFoundError:
-        return JournalSnapshot(records=[], byte_length=0, truncated_tail=False)
+def parse_journal_bytes(data: bytes, *, source: str = "journal") -> JournalSnapshot:
+    """Parse complete journal lines from raw bytes. `byte_length` covers
+    exactly the parsed lines, so hashing data[:byte_length] identifies
+    the parsed prefix."""
     records = []
     offset = 0
     truncated = False
@@ -266,12 +264,13 @@ def read_journal(path) -> JournalSnapshot:
                 record = json.loads(line.decode("utf-8"))
             except (UnicodeDecodeError, ValueError) as exc:
                 raise JournalIntegrityError(
-                    f"Corrupt journal line at byte {offset} of {path}: {exc}"
+                    f"Corrupt journal line at byte {offset} of {source}: "
+                    f"{exc}"
                 )
             errors = validate_record(record)
             if errors:
                 raise JournalIntegrityError(
-                    f"Invalid journal record at byte {offset} of {path}: "
+                    f"Invalid journal record at byte {offset} of {source}: "
                     + "; ".join(errors)
                 )
             records.append(record)
@@ -279,6 +278,15 @@ def read_journal(path) -> JournalSnapshot:
     return JournalSnapshot(
         records=records, byte_length=offset, truncated_tail=truncated,
     )
+
+
+def read_journal(path) -> JournalSnapshot:
+    path = Path(path)
+    try:
+        data = path.read_bytes()
+    except FileNotFoundError:
+        return JournalSnapshot(records=[], byte_length=0, truncated_tail=False)
+    return parse_journal_bytes(data, source=str(path))
 
 
 # --------------------------------------------------------------------------
