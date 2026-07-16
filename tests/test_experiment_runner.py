@@ -281,6 +281,44 @@ class RunnerRecoveryTests(unittest.TestCase):
             self.assertEqual(interrupted["source_status"], "recorded")
             self.assertIsNotNone(interrupted["recorded_game_sha256"])
 
+    def test_crashed_explicit_failure_does_not_auto_rerun(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = make_manifest(seeds=(9001,))
+            write_manifest(tmp, manifest)
+            entry = manifest["execution_contract"]["schedule"][0]
+            directory = games_dir(tmp, "exp1")
+            directory.mkdir(parents=True, exist_ok=True)
+            engine = _default_engine_factory(entry, manifest, directory)
+            game_id = engine.state.game_id
+            writer = JournalWriter(
+                journal_path(tmp, "exp1"),
+                manifest_content_sha256=manifest["manifest_content_sha256"],
+                execution_contract_sha256=execution_contract_sha256(manifest),
+            )
+            writer.append(TRIAL_STARTED, {
+                "trial_id": entry["trial_id"],
+                "attempt_id": f"{entry['trial_id']}_a1",
+                "attempt_number": 1,
+                "trial_index": entry["trial_index"],
+                "scheduler_position": entry["scheduler_position"],
+                "condition_id": entry["condition_id"],
+                "seed": entry["seed"],
+                "repetition": entry["repetition"],
+                "game_id": game_id,
+            })
+            engine.abort("ActionFailureAbort")
+            engine.close()
+
+            counts = run(tmp, resume=True)
+            self.assertEqual(counts["reconciled_failed"], 1)
+            self.assertEqual(counts["completed"], 0)
+            self.assertEqual(counts["skipped_exhausted"], 1)
+            records = read_journal(journal_path(tmp, "exp1")).records
+            failures = [r for r in records
+                        if r["record_type"] == "trial_failed"]
+            self.assertEqual(len(failures), 1)
+            self.assertTrue(failures[0]["recovered"])
+
 
 class RunnerRetryTests(unittest.TestCase):
     def test_failures_require_retry_failed_even_before_attempt_budget(self):

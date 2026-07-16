@@ -71,7 +71,7 @@ _RECORD_FIELDS = {
     TRIAL_FAILED: (
         frozenset(_ATTEMPT_FIELDS)
         | {"recorded_game_sha256", "source_status", "sanitized_error"},
-        frozenset({"error_category"}),
+        frozenset({"error_category", "recovered", "verifier"}),
     ),
     TRIAL_INTERRUPTED: (
         frozenset(_ATTEMPT_FIELDS)

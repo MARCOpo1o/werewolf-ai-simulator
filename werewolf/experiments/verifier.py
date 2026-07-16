@@ -62,6 +62,16 @@ def _usable_outcome(row: dict) -> bool:
     )
 
 
+def _usable_abort(row: dict) -> bool:
+    return (
+        row.get("abort_schema_version") == 1
+        and isinstance(row.get("reason"), str)
+        and bool(row["reason"].strip())
+        and isinstance(row.get("round"), int)
+        and isinstance(row.get("phase"), str)
+    )
+
+
 def _victory_predicate_holds(
     winner: str, remaining: list, role_map: dict
 ) -> Optional[str]:
@@ -169,6 +179,27 @@ def verify_terminal_completion(
     if not checks["usage_summary_present"]:
         reasons.append("terminal usage_summary close record is missing")
 
+    aborts = [r for r in rows if r.get("type") == "abort"]
+    usable_aborts = [r for r in aborts if _usable_abort(r)]
+    common_terminal_checks = (
+        checks["config_present"]
+        and checks["game_id_match"]
+        and checks["game_rules_match"]
+        and checks["usage_summary_present"]
+    )
+    terminal_abort = None
+    if len(aborts) == 1 and len(usable_aborts) == 1 \
+            and common_terminal_checks and not outcomes:
+        abort = usable_aborts[0]
+        terminal_abort = {
+            "reason": abort["reason"],
+            "classification": (
+                "interrupted"
+                if abort["reason"] == "operator_interrupt"
+                else "failed"
+            ),
+        }
+
     complete = all(checks.values())
     return {
         "verifier_version": VERIFIER_VERSION,
@@ -176,6 +207,7 @@ def verify_terminal_completion(
         "checks": checks,
         "reasons": reasons,
         "unparseable_lines": unparseable,
+        "terminal_abort": terminal_abort,
         "outcome": (
             {
                 "winner": outcome["winner"],

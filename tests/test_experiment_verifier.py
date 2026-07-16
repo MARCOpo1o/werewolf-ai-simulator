@@ -71,6 +71,31 @@ class VerifierTests(unittest.TestCase):
         self.assertFalse(result["complete"])
         self.assertFalse(result["checks"]["single_usable_outcome"])
 
+    def test_explicit_failure_abort_is_classified(self):
+        rows = [r for r in self.rows if r.get("type") != "outcome"]
+        rows.append({
+            "type": "abort", "abort_schema_version": 1,
+            "reason": "ActionFailureAbort", "round": 2,
+            "phase": "day_vote",
+        })
+        result = self.verify(rows)
+        self.assertFalse(result["complete"])
+        self.assertEqual(result["terminal_abort"], {
+            "reason": "ActionFailureAbort", "classification": "failed",
+        })
+
+    def test_operator_abort_remains_interrupted(self):
+        rows = [r for r in self.rows if r.get("type") != "outcome"]
+        rows.append({
+            "type": "abort", "abort_schema_version": 1,
+            "reason": "operator_interrupt", "round": 2,
+            "phase": "day_vote",
+        })
+        result = self.verify(rows)
+        self.assertEqual(
+            result["terminal_abort"]["classification"], "interrupted",
+        )
+
     def test_duplicate_outcome_blocks_recovery(self):
         outcome = next(r for r in self.rows if r.get("type") == "outcome")
         result = self.verify(self.rows + [outcome])

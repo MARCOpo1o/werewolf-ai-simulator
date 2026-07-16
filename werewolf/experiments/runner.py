@@ -501,7 +501,7 @@ def _reconcile_open_attempts(
 ) -> dict:
     """Crash recovery: resolve every open attempt using the minimal
     execution-side verifier, never the PR 2 report builder."""
-    counts = {"recovered": 0, "interrupted": 0}
+    counts = {"recovered": 0, "failed": 0, "interrupted": 0}
     for trial in list(writer.state.trials.values()):
         open_attempt = trial.open_attempt
         if open_attempt is None:
@@ -537,6 +537,22 @@ def _reconcile_open_attempts(
                 },
             })
             counts["recovered"] += 1
+        elif (verification.get("terminal_abort") or {}).get(
+                "classification") == "failed":
+            abort = verification["terminal_abort"]
+            writer.append(TRIAL_FAILED, {
+                **fields,
+                "recorded_game_sha256": source["recorded_game_sha256"],
+                "source_status": SOURCE_RECORDED,
+                "sanitized_error": abort["reason"],
+                "error_category": abort["reason"],
+                "recovered": True,
+                "verifier": {
+                    "verifier_version": verification["verifier_version"],
+                    "checks": verification["checks"],
+                },
+            })
+            counts["failed"] += 1
         else:
             writer.append(TRIAL_INTERRUPTED, {
                 **fields,
@@ -640,6 +656,7 @@ def run_experiment(
         )
         counts = {
             "recovered": recovery["recovered"],
+            "reconciled_failed": recovery["failed"],
             "reconciled_interrupted": recovery["interrupted"],
             "completed": 0, "failed": 0, "interrupted": 0,
             "skipped_exhausted": len(exhausted),
