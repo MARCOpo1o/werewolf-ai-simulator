@@ -24,6 +24,7 @@ stratified, and persuasion measures remain descriptive.
 from __future__ import annotations
 
 import hashlib
+import math
 import random
 from collections import defaultdict
 from typing import Callable, Optional
@@ -55,6 +56,27 @@ COMPARABLE_METRICS = ("village_win_rate", "wolf_win_rate")
 MIN_SEED_CLUSTERS_FOR_INTERVAL = 5
 
 ECE_BIN_COUNT = 10  # [0.0, 0.1), ..., [0.9, 1.0]
+
+
+def _linear_quantile(sorted_values: list[float], probability: float):
+    """Hyndman-Fan type 7 quantile (linear interpolation).
+
+    This pins the aggregate-1 latency method: h=(n-1)p, interpolating
+    between the surrounding zero-based order statistics. An even-sized
+    sample's median is therefore the average of its two central values.
+    """
+    if not sorted_values:
+        return None
+    position = (len(sorted_values) - 1) * probability
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return sorted_values[lower]
+    fraction = position - lower
+    return (
+        sorted_values[lower]
+        + fraction * (sorted_values[upper] - sorted_values[lower])
+    )
 
 
 # --------------------------------------------------------------------------
@@ -748,19 +770,11 @@ def _view_metrics(games: list, bootstrap: dict, label: str) -> dict:
     attempted = sum(g["usage"]["api_calls"] for g in games)
     sorted_latencies = sorted(latencies)
 
-    def percentile(percentile: float):
-        if not sorted_latencies:
-            return None
-        index = min(
-            len(sorted_latencies) - 1,
-            int(percentile * (len(sorted_latencies) - 1)),
-        )
-        return sorted_latencies[index]
-
     metrics["latency"] = {
         "mean_ms": mean_statistic(latencies),
-        "median_ms": percentile(0.5),
-        "p90_ms": percentile(0.9),
+        "median_ms": _linear_quantile(sorted_latencies, 0.5),
+        "p90_ms": _linear_quantile(sorted_latencies, 0.9),
+        "quantile_method": "linear_type_7",
         "calls_with_latency": len(latencies),
         "total_attempted_calls": attempted,
         "coverage_fraction": (

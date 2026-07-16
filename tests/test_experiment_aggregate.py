@@ -7,6 +7,7 @@ from werewolf.experiments.aggregate import (
     cluster_bootstrap,
     derive_rng_seed,
     extract_game_evidence,
+    _linear_quantile,
     mean_statistic,
     ratio_statistic,
 )
@@ -244,6 +245,14 @@ def run_analysis(sources, manifest=None):
 
 
 class BootstrapTests(unittest.TestCase):
+    def test_linear_quantile_averages_even_sample_median(self):
+        self.assertEqual(_linear_quantile([100, 200], 0.5), 150)
+
+    def test_linear_quantile_interpolates_p90(self):
+        self.assertAlmostEqual(
+            _linear_quantile([0, 100, 200, 300], 0.9), 270,
+        )
+
     def test_deterministic_and_cluster_resampled(self):
         obs = {seed: [float(seed % 2)] * 2 for seed in range(10)}
         a = cluster_bootstrap(obs, mean_statistic, n_boot=200,
