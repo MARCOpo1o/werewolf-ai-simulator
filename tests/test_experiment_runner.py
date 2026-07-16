@@ -1,4 +1,5 @@
 import json
+import copy
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,6 +19,7 @@ from werewolf.experiments.manifest import (
     journal_path,
     manifest_is_frozen,
     write_manifest,
+    finalize_manifest,
 )
 from werewolf.experiments.runner import (
     ExecutionRuntimeChanged,
@@ -444,6 +446,33 @@ class ManifestBuildTests(unittest.TestCase):
         with self.assertRaises(ManifestError):
             make_manifest(policies={"warp_speed": True,
                                     **OFFLINE_POLICIES})
+
+    def test_deep_execution_validation_blocks_before_health_preflight(self):
+        manifest = copy.deepcopy(make_manifest())
+        manifest["execution_contract"]["game"]["n_wolves"] = 99
+        manifest["execution_contract"]["generation"]["top_p"] = 2
+        manifest["execution_contract"]["policies"]["request_timeout_seconds"] = 0
+        manifest["execution_contract"]["policies"]["retryable_errors"] = [
+            "not_a_category",
+        ]
+        manifest["analysis_contract"]["bootstrap"]["alpha"] = 1
+        manifest = finalize_manifest(manifest)
+        errors = validate_manifest_for_execution(manifest)
+        self.assertTrue(any("n_wolves" in error for error in errors))
+        self.assertTrue(any("top_p" in error for error in errors))
+        self.assertTrue(any("request_timeout" in error for error in errors))
+        self.assertTrue(any("retryable_errors" in error for error in errors))
+        self.assertTrue(any("bootstrap.alpha" in error for error in errors))
+
+    def test_invalid_manifest_does_not_run_paid_health_preflight(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = copy.deepcopy(make_manifest())
+            manifest["execution_contract"]["game"]["n_players"] = 2
+            write_manifest(tmp, finalize_manifest(manifest))
+            prober = mock.Mock(side_effect=AssertionError("must not probe"))
+            with self.assertRaises(ExperimentRunError):
+                run(tmp, health_prober=prober)
+            prober.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -16,12 +16,14 @@ Execution is CLI-only, sequential, and fail-closed:
 from __future__ import annotations
 
 import time
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
 from werewolf.agents.ai_agent import MAX_RETRIES
 from werewolf.engine.limits import limits_dict
+from werewolf.llm.records import ErrorCategory
 from werewolf.experiments import manifest as manifest_store
 from werewolf.experiments.aggregate import (
     AGGREGATE_ANALYSIS_VERSION,
@@ -301,6 +303,118 @@ def validate_manifest_for_execution(manifest: dict) -> list:
     ))
     errors.extend(verify_prompt_profile(execution["prompt_profile"]))
     policies = execution["policies"]
+    game = execution["game"]
+    generation = execution["generation"]
+    analysis = manifest["analysis_contract"]
+
+    def positive_int(value, label, *, allow_none=False):
+        if value is None and allow_none:
+            return
+        if (not isinstance(value, int) or isinstance(value, bool)
+                or value < 1):
+            errors.append(f"{label} must be a positive integer")
+
+    def finite_number(value, label, *, lower=None, upper=None,
+                      allow_none=False):
+        if value is None and allow_none:
+            return
+        if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                or not math.isfinite(value)):
+            errors.append(f"{label} must be a finite number")
+            return
+        if lower is not None and value < lower:
+            errors.append(f"{label} must be >= {lower}")
+        if upper is not None and value > upper:
+            errors.append(f"{label} must be <= {upper}")
+
+    expected_game = set(DEFAULT_GAME)
+    if set(game) != expected_game:
+        errors.append("execution_contract.game must contain exactly "
+                      f"{sorted(expected_game)}")
+    else:
+        positive_int(game["n_players"], "game.n_players")
+        positive_int(game["n_wolves"], "game.n_wolves")
+        if game["n_seers"] not in (0, 1):
+            errors.append("game.n_seers must be 0 or 1")
+        if isinstance(game["n_players"], int) and isinstance(
+                game["n_wolves"], int) and isinstance(game["n_seers"], int):
+            if game["n_wolves"] >= game["n_players"]:
+                errors.append("game.n_wolves must be less than game.n_players")
+            if game["n_wolves"] + game["n_seers"] >= game["n_players"]:
+                errors.append("game must leave at least one villager")
+        positive_int(game["discussion_cycles"], "game.discussion_cycles")
+        if not isinstance(game["belief_snapshots"], bool):
+            errors.append("game.belief_snapshots must be a boolean")
+
+    if set(generation) != set(DEFAULT_GENERATION):
+        errors.append("execution_contract.generation must contain exactly "
+                      f"{sorted(DEFAULT_GENERATION)}")
+    else:
+        finite_number(generation["temperature"], "generation.temperature",
+                      lower=0, allow_none=True)
+        finite_number(generation["top_p"], "generation.top_p", lower=0,
+                      upper=1, allow_none=True)
+        positive_int(generation["max_output_tokens"],
+                     "generation.max_output_tokens", allow_none=True)
+        if generation["reasoning_effort"] is not None and not isinstance(
+                generation["reasoning_effort"], str):
+            errors.append("generation.reasoning_effort must be a string or null")
+        if generation["provider_seed"] is not None:
+            positive_int(generation["provider_seed"], "generation.provider_seed")
+        if not isinstance(generation["structured_output"], bool):
+            errors.append("generation.structured_output must be a boolean")
+
+    if set(policies) != set(FORMAL_EXECUTION_DEFAULTS):
+        errors.append("execution_contract.policies must contain exactly "
+                      f"{sorted(FORMAL_EXECUTION_DEFAULTS)}")
+    else:
+        if not isinstance(policies["allow_provider_fallback"], bool):
+            errors.append("policies.allow_provider_fallback must be a boolean")
+        if policies["action_failure_policy"] not in ("fallback", "abort_game"):
+            errors.append("policies.action_failure_policy is invalid")
+        positive_int(policies["agent_action_max_attempts"],
+                     "policies.agent_action_max_attempts")
+        positive_int(policies["request_timeout_seconds"],
+                     "policies.request_timeout_seconds")
+        known_categories = {category.value for category in ErrorCategory}
+        retryable = policies["retryable_errors"]
+        if (not isinstance(retryable, list) or len(retryable) != len(set(retryable))
+                or not all(isinstance(item, str) and item in known_categories
+                           for item in retryable)):
+            errors.append("policies.retryable_errors must be unique known "
+                          "error-category strings")
+        if policies["retry_backoff"] != "none":
+            errors.append("policies.retry_backoff must be 'none' in v1")
+        positive_int(policies["max_trial_attempts"],
+                     "policies.max_trial_attempts")
+        positive_int(policies["max_rounds"], "policies.max_rounds")
+        finite_number(policies["intertrial_delay_seconds"],
+                      "policies.intertrial_delay_seconds", lower=0)
+        for key in ("public_message_limit", "wolf_message_limit", "memory_limit"):
+            positive_int(policies[key], f"policies.{key}")
+
+    bootstrap = analysis["bootstrap"]
+    if set(bootstrap) != set(DEFAULT_BOOTSTRAP):
+        errors.append("analysis_contract.bootstrap must contain exactly "
+                      f"{sorted(DEFAULT_BOOTSTRAP)}")
+    else:
+        positive_int(bootstrap["n_boot"], "bootstrap.n_boot")
+        finite_number(bootstrap["alpha"], "bootstrap.alpha", lower=0,
+                      upper=1)
+        if bootstrap.get("alpha") in (0, 1):
+            errors.append("bootstrap.alpha must be strictly between 0 and 1")
+        if (not isinstance(bootstrap["rng_seed"], int)
+                or isinstance(bootstrap["rng_seed"], bool)):
+            errors.append("bootstrap.rng_seed must be an integer")
+    if analysis.get("metric_weighting") != METRIC_WEIGHTING:
+        errors.append("analysis_contract.metric_weighting is unsupported")
+
+    for item in execution["predeclared_adjustments"]:
+        if (not isinstance(item, dict) or set(item) != {"description", "fingerprint"}
+                or not isinstance(item["description"], str)
+                or not isinstance(item["fingerprint"], str)):
+            errors.append("predeclared_adjustments entries need exactly "
+                          "string description and fingerprint")
     limits = limits_dict()
     pins = (
         ("public_message_limit", limits["public_message_max_chars"]),
