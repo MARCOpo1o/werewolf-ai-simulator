@@ -364,6 +364,9 @@ def _usage_evidence(forensic_usage: dict, rows: list) -> dict:
         ),
         "cost_sources": list(forensic_usage.get("cost_sources") or []),
         "tokens": dict(forensic_usage.get("tokens") or {}),
+        "token_fields_missing": dict(
+            forensic_usage.get("token_fields_missing") or {}
+        ),
         "usage_reliability": forensic_usage.get("reliability"),
         "latencies": latencies,
     }
@@ -741,31 +744,42 @@ def _view_metrics(games: list, bootstrap: dict, label: str) -> dict:
         }
 
     # Cost, tokens, latency.
-    games_with_cost = [g for g in games
-                       if g["usage"]["cost_usd"] is not None]
-    total_cost = (
-        sum(g["usage"]["cost_usd"] for g in games_with_cost)
-        if games_with_cost else None
+    games_with_cost = [
+        g for g in games if g["usage"]["cost_usd"] is not None
+    ]
+    known_cost = sum(g["usage"]["cost_usd"] for g in games_with_cost)
+    all_zero_call_games = bool(games) and all(
+        g["usage"]["api_calls"] == 0 for g in games
     )
+    known_total = (
+        known_cost if games_with_cost or all_zero_call_games else None
+    )
+    incomplete_cost_games = sum(
+        1 for g in games if not g["usage"]["cost_complete"]
+    )
+    cost_complete = incomplete_cost_games == 0
     metrics["cost"] = {
-        "total_usd": total_cost,
+        "known_cost_usd_total": known_total,
+        "known_cost_per_all_games_lower_bound": (
+            known_total / total if known_total is not None and total else None
+        ),
         "cost_per_game_usd": (
-            total_cost / len(games_with_cost)
-            if games_with_cost and total_cost is not None else None
+            known_total / total
+            if cost_complete and known_total is not None and total else None
         ),
-        "games_with_cost": len(games_with_cost),
-        "games_with_incomplete_cost": sum(
-            1 for g in games if not g["usage"]["cost_complete"]
-        ),
-        "cost_complete": all(
-            g["usage"]["cost_complete"] for g in games
-        ) and len(games_with_cost) == total,
+        "games_with_known_cost": len(games_with_cost),
+        "games_with_incomplete_cost": incomplete_cost_games,
+        "cost_complete": cost_complete,
     }
     tokens: dict = defaultdict(int)
+    token_fields_missing: dict = defaultdict(int)
     for game in games:
         for key, value in game["usage"]["tokens"].items():
             tokens[key] += value
+        for key, value in game["usage"]["token_fields_missing"].items():
+            token_fields_missing[key] += value
     metrics["tokens"] = dict(tokens)
+    metrics["token_fields_missing"] = dict(token_fields_missing)
 
     latencies = [v for g in games for v in g["usage"]["latencies"]]
     attempted = sum(g["usage"]["api_calls"] for g in games)
@@ -1007,6 +1021,7 @@ def analyze_v1(
                       if r.get("record_type") == "health_check"]
     health_cost = 0.0
     health_cost_known = 0
+    health_cost_unavailable = 0
     for record in health_records:
         usd = nonnegative_finite_number(
             as_mapping(record.get("cost")).get("usd")
@@ -1014,6 +1029,8 @@ def analyze_v1(
         if usd is not None:
             health_cost += usd
             health_cost_known += 1
+        else:
+            health_cost_unavailable += 1
 
     schedule = manifest["execution_contract"]["schedule"]
 
@@ -1101,10 +1118,14 @@ def analyze_v1(
                 health_cost if health_cost_known else None
             ),
             "health_checks": len(health_records),
+            "health_checks_with_known_cost": health_cost_known,
+            "health_checks_with_unavailable_cost": health_cost_unavailable,
+            "health_cost_complete": health_cost_unavailable == 0,
             "sources_with_incomplete_cost": incomplete_sources,
             "sources_excluded_from_totals": excluded_from_totals,
             "complete": incomplete_sources == 0
-            and excluded_from_totals == 0,
+            and excluded_from_totals == 0
+            and health_cost_unavailable == 0,
         },
     }
 

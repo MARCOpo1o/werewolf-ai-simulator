@@ -87,8 +87,13 @@ def call_rows(call_id, action, *, attempts=1, fallback=False,
                 ("repaired" if repaired else "direct") if ok else None
             ),
             "validation_ok": ok or None,
-            "cost": {"source": "provider_reported", "usd": usd,
-                     "ticks": int(usd * 10_000_000_000)},
+            "cost": {
+                "source": "provider_reported", "usd": usd,
+                "ticks": (
+                    int(usd * 10_000_000_000)
+                    if usd is not None else None
+                ),
+            },
             "usage": {"total_tokens": 100, "input_tokens": 80,
                       "output_tokens": 20},
             "latency_ms": latency_ms,
@@ -214,7 +219,7 @@ def make_manifest(comparisons=None, seeds=(1, 2, 3, 4, 5, 6)):
     )
 
 
-def run_analysis(sources, manifest=None):
+def run_analysis(sources, manifest=None, lifecycle_records=None):
     manifest = manifest or make_manifest()
     records = []
     for source in sources:
@@ -235,12 +240,13 @@ def run_analysis(sources, manifest=None):
             "recorded_game_sha256": source.recorded_game_sha256,
             "source_status": "recorded",
         })
+    lifecycle_records = lifecycle_records or []
     return analyze_v1(
         manifest=manifest,
         analysis_contract=manifest["analysis_contract"],
         sources=sources,
-        lifecycle_records=[],
-        replay_state=replay(records),
+        lifecycle_records=lifecycle_records,
+        replay_state=replay(records + lifecycle_records),
     )
 
 
@@ -367,6 +373,7 @@ class EvidenceExtractionTests(unittest.TestCase):
         self.assertFalse(usage["cost_complete"])
         self.assertEqual(usage["calls_with_unavailable_cost"], 1)
         self.assertEqual(usage["tokens"]["total_tokens"], 300)
+        self.assertEqual(usage["token_fields_missing"]["total_tokens"], 1)
 
     def test_clean_requires_pr2_strategic_eligibility(self):
         source = make_source("cond_a", 1)
@@ -479,7 +486,9 @@ class AnalyzeV1Tests(unittest.TestCase):
     def test_cost_tokens_latency(self):
         analysis = run_analysis(self._sources())
         overall = analysis["views"]["all_completed"]["overall"]
-        self.assertAlmostEqual(overall["cost"]["total_usd"], 0.004 * 12)
+        self.assertAlmostEqual(
+            overall["cost"]["known_cost_usd_total"], 0.004 * 12,
+        )
         self.assertAlmostEqual(
             overall["cost"]["cost_per_game_usd"], 0.004,
         )
@@ -490,6 +499,32 @@ class AnalyzeV1Tests(unittest.TestCase):
         self.assertEqual(latency["coverage_fraction"], 1.0)
         self.assertEqual(latency["median_ms"], 100)
         self.assertEqual(latency["p90_ms"], 100)
+
+    def test_partial_cost_is_a_lower_bound_not_per_game_estimate(self):
+        sources = self._sources()
+        sources[0] = make_source("cond_a", 1, usd=None)
+        analysis = run_analysis(sources)
+        cost = analysis["views"]["all_completed"]["overall"]["cost"]
+        self.assertFalse(cost["cost_complete"])
+        self.assertIsNone(cost["cost_per_game_usd"])
+        self.assertEqual(cost["games_with_known_cost"], 11)
+        self.assertEqual(cost["games_with_incomplete_cost"], 1)
+        self.assertAlmostEqual(
+            cost["known_cost_per_all_games_lower_bound"],
+            (0.004 * 11) / 12,
+        )
+
+    def test_health_cost_completeness_affects_operational_total(self):
+        health = [
+            {"record_type": "health_check", "cost": {"usd": 0.01}},
+            {"record_type": "health_check", "cost": None},
+        ]
+        analysis = run_analysis(self._sources(), lifecycle_records=health)
+        cost = analysis["operational"]["cost"]
+        self.assertEqual(cost["health_checks_with_known_cost"], 1)
+        self.assertEqual(cost["health_checks_with_unavailable_cost"], 1)
+        self.assertFalse(cost["health_cost_complete"])
+        self.assertFalse(cost["complete"])
 
     def test_modified_sources_are_ineligible_but_visible(self):
         sources = self._sources()
