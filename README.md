@@ -83,6 +83,32 @@ The related APIs are:
 
 JSONL remains canonical. Rebuildable metadata, report sidecars, and `outputs/games/index.json` only accelerate history and report reads. Reconciliation runs once on first history access, incrementally after a game completes or a report is requested, and explicitly through `GameRepository.rebuild()` for tests and maintenance. Normal history requests read the derived index instead of rescanning every log. See [the single-game report contract](docs/single-game-report.md) for status, privacy, storage, and compatibility details.
 
+## Running formal benchmark experiments (CLI)
+
+The PR 3 experiment runner is the reproducible, CLI-only path for multi-game
+model comparisons. It materializes a versioned manifest, runs conditions
+sequentially with deterministic seed-block ordering, journals every attempt,
+and writes immutable aggregate summary revisions:
+
+```bash
+python3 -m werewolf.cli.experiment create-crossed \
+  --experiment-id pilot_a_vs_b \
+  --model-a gemini_flash_lite --model-b fast \
+  --num-seeds 10 --seed-start 42001 --repetitions 2
+python3 -m werewolf.cli.experiment run pilot_a_vs_b
+python3 -m werewolf.cli.experiment summarize pilot_a_vs_b
+```
+
+Use `--resume` after an interruption and `--analysis-policy current` only when
+you intentionally want a new summary revision under the current analysis
+implementation. The web UI at `/experiments` is read-only: it shows persisted
+experiment history, summary revisions, metrics, declared comparisons, exports,
+and links to individual forensic reports. It cannot start paid work.
+
+See [the multi-game benchmark contract](docs/multi-game-benchmark.md) for
+storage, crash recovery, source integrity, uncertainty, and interpretation
+limits.
+
 ## Running batch trials (CLI)
 
 ```bash
@@ -141,9 +167,8 @@ Game logs are written to `outputs/games/` (JSONL per game, gitignored): regenera
 
 ## Next steps
 
-- Aggregate experiment dashboard for crossed model matchups
 - Replayable checkpoints and counterfactual branches (inject different deceptive arguments into one exact state, measure causal belief shifts)
-- Pre-run cost estimation from historical game records
+- Multilingual and hidden-adversary replications after the baseline protocol is stable
 
 ## Project structure
 
