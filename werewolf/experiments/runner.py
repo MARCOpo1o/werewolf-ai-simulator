@@ -81,6 +81,7 @@ FORMAL_EXECUTION_DEFAULTS = {
     "request_timeout_seconds": 120,
     "retryable_errors": [
         "rate_limited", "timeout", "network_error", "provider_error",
+        "malformed_json", "invalid_game_action",
     ],
     "retry_backoff": "none",
     "max_trial_attempts": 2,

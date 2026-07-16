@@ -214,6 +214,8 @@ class AIAgent:
                     f"P{self.player_id} parsing failed, "
                     f"raw[:300]: {str(result.text)[:300]}"
                 )
+                if not self._retry_category(ErrorCategory.MALFORMED_JSON):
+                    break
                 continue
 
             record.parse_ok = True
@@ -240,6 +242,8 @@ class AIAgent:
             self._record(record)
             logger.warning(f"P{self.player_id} invalid action: {error}")
             errors.append(error)
+            if not self._retry_category(ErrorCategory.INVALID_GAME_ACTION):
+                break
 
         self._abort_if_strategic_fallback(
             required_action,
@@ -258,6 +262,13 @@ class AIAgent:
         )
         fallback["_source_call_id"] = call_id
         return fallback
+
+    def _retry_category(self, category: ErrorCategory) -> bool:
+        """Apply the pinned category allowlist to non-provider failures too."""
+        return (
+            self.retryable_error_categories is None
+            or category.value in self.retryable_error_categories
+        )
 
     def _abort_if_strategic_fallback(
         self, required_action: str, detail: str

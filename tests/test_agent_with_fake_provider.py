@@ -119,6 +119,34 @@ class AgentRecordingTests(unittest.TestCase):
         run_act(agent, make_observation())
         self.assertEqual(provider.calls_made, 1)
 
+    def test_manifest_retry_categories_control_malformed_json(self):
+        provider = FakeProvider([
+            success_result(text="not json"),
+            success_result(VALID_VOTE),
+        ])
+        ledger = UsageLedger()
+        agent = AIAgent(
+            player_id=1, role="villager", team="village", provider=provider,
+            model="fake-model-1", ledger=ledger,
+            retryable_error_categories=set(),
+        )
+        run_act(agent, make_observation())
+        self.assertEqual(provider.calls_made, 1)
+
+    def test_manifest_retry_categories_control_invalid_actions(self):
+        invalid = {"thought": "t", "action": {"vote_target": 99}}
+        provider = FakeProvider([
+            success_result(invalid), success_result(VALID_VOTE),
+        ])
+        ledger = UsageLedger()
+        agent = AIAgent(
+            player_id=1, role="villager", team="village", provider=provider,
+            model="fake-model-1", ledger=ledger,
+            retryable_error_categories={"malformed_json"},
+        )
+        run_act(agent, make_observation())
+        self.assertEqual(provider.calls_made, 1)
+
     def test_invalid_action_then_successful_retry_shares_call_id(self):
         invalid = {"thought": "t", "say": None, "action": {"vote_target": 99}}
         provider = FakeProvider([

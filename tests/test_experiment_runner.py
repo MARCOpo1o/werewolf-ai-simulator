@@ -458,6 +458,8 @@ class ManifestBuildTests(unittest.TestCase):
         self.assertEqual(policies["agent_action_max_attempts"], 3)
         self.assertEqual(policies["request_timeout_seconds"], 120)
         self.assertEqual(policies["retry_backoff"], "none")
+        self.assertIn("malformed_json", policies["retryable_errors"])
+        self.assertIn("invalid_game_action", policies["retryable_errors"])
         self.assertEqual(policies["public_message_limit"], 800)
         self.assertEqual(policies["memory_limit"], 2500)
         self.assertEqual(
