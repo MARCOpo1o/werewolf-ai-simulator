@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Experiment Report · Manipulation Resistance Arena</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='experiment.css') }}">
+</head>
+<body class="experiment-page" data-experiment-id="{{ experiment_id or '' }}">
+    <header class="experiment-header">
+        <a class="brand" href="/">Manipulation Resistance Arena</a>
+        <nav><a href="/experiments">Experiment history</a><a href="/games">Game history</a></nav>
+    </header>
+    <main class="experiment-shell">
+        {% if experiment_id %}
+        <div id="experiment-report" aria-live="polite">Loading experiment…</div>
+        {% else %}
+        <h1>Experiment not found</h1>
+        <p><a href="/experiments">Return to experiment history</a></p>
+        {% endif %}
+    </main>
+    {% if experiment_id %}
+    <script src="{{ url_for('static', filename='experiment.js') }}"></script>
+    {% endif %}
+</body>
+</html>

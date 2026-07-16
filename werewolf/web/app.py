@@ -19,6 +19,13 @@ from werewolf.web.services import (
     create_engine_from_payload,
     health_check,
 )
+from werewolf.web.experiment_service import (
+    ExperimentNotFound,
+    export_path,
+    list_experiments,
+    load_experiment,
+    load_experiment_summary,
+)
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
@@ -27,6 +34,7 @@ app = Flask(__name__)
 game_engine: GameEngine | None = None
 _game_lock = threading.RLock()
 game_repository = GameRepository(Path("outputs/games"))
+experiment_root = Path("outputs/experiments")
 
 
 def _request_json_object():
@@ -59,6 +67,20 @@ def index():
 @app.route("/games")
 def game_history():
     return render_template("history.html")
+
+
+@app.route("/experiments")
+def experiment_history():
+    return render_template("experiments.html")
+
+
+@app.route("/experiments/<experiment_id>")
+def experiment_report_page(experiment_id: str):
+    try:
+        load_experiment(experiment_root, experiment_id)
+    except ExperimentNotFound:
+        return render_template("experiment.html", experiment_id=None), 404
+    return render_template("experiment.html", experiment_id=experiment_id)
 
 
 @app.route("/games/<game_id>")
@@ -222,6 +244,44 @@ def list_games():
         ))
     except InvalidCursor as exc:
         return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/experiments")
+def get_experiments():
+    return jsonify(list_experiments(experiment_root))
+
+
+@app.route("/api/experiments/<experiment_id>")
+def get_experiment(experiment_id: str):
+    try:
+        return jsonify(load_experiment(experiment_root, experiment_id))
+    except ExperimentNotFound:
+        return jsonify({"error": "Experiment not found"}), 404
+
+
+@app.route("/api/experiments/<experiment_id>/summaries/<int:revision>")
+def get_experiment_summary(experiment_id: str, revision: int):
+    try:
+        return jsonify(
+            load_experiment_summary(experiment_root, experiment_id, revision)
+        )
+    except ExperimentNotFound:
+        return jsonify({"error": "Summary not found"}), 404
+
+
+@app.route("/api/experiments/<experiment_id>/exports/<int:revision>/<filename>")
+def download_experiment_export(experiment_id: str, revision: int,
+                               filename: str):
+    try:
+        path = export_path(experiment_root, experiment_id, revision, filename)
+    except ExperimentNotFound:
+        return jsonify({"error": "Export not found"}), 404
+    response = send_file(
+        path.resolve(), mimetype="text/csv", as_attachment=True,
+        download_name=path.name,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.route("/api/games/<game_id>/report")

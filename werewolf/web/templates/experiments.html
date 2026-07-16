@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Experiment History · Manipulation Resistance Arena</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='experiment.css') }}">
+</head>
+<body class="experiment-page">
+    <header class="experiment-header">
+        <a class="brand" href="/">Manipulation Resistance Arena</a>
+        <nav><a href="/games">Game history</a></nav>
+    </header>
+    <main class="experiment-shell">
+        <p class="eyebrow">Read-only benchmark history</p>
+        <h1>Experiments</h1>
+        <p class="lede">Completed experiment evidence and derived summaries. Running paid experiments remains CLI-only.</p>
+        <div id="experiment-list" aria-live="polite">Loading experiments…</div>
+    </main>
+    <script src="{{ url_for('static', filename='experiments.js') }}"></script>
+</body>
+</html>
